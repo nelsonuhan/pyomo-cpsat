@@ -8,7 +8,7 @@ from pyomo.common.config import ConfigValue, NonNegativeInt
 from pyomo.common.tee import TeeStream, capture_output
 from pyomo.common.log import LogStream
 from pyomo.core.kernel.objective import minimize, maximize
-from pyomo.core.base import SymbolMap
+from pyomo.core.base import SymbolMap, NumericLabeler, TextLabeler
 from pyomo.core.base.var import _GeneralVarData
 from pyomo.core.base.constraint import _GeneralConstraintData
 from pyomo.core.base.sos import _SOSConstraintData
@@ -34,11 +34,13 @@ logger = logging.getLogger(__name__)
 
 highspy, highspy_available = attempt_import('highspy')
 
+from ortools.sat.python import cp_model
+
 class DegreeError(PyomoException):
     pass
 
 
-class HighsConfig(MIPSolverConfig):
+class CpsatConfig(MIPSolverConfig):
     def __init__(
         self,
         description=None,
@@ -47,7 +49,7 @@ class HighsConfig(MIPSolverConfig):
         implicit_domain=None,
         visibility=0,
     ):
-        super(HighsConfig, self).__init__(
+        super(CpsatConfig, self).__init__(
             description=description,
             doc=doc,
             implicit=implicit,
@@ -64,125 +66,121 @@ class HighsConfig(MIPSolverConfig):
         self.log_level = logging.INFO
 
 
-class HighsResults(Results):
+class CpsatResults(Results):
     def __init__(self, solver):
         super().__init__()
         self.wallclock_time = None
         self.solution_loader = PersistentSolutionLoader(solver=solver)
 
 
-class _MutableVarBounds(object):
-    def __init__(self, lower_expr, upper_expr, pyomo_var_id, var_map, highs):
-        self.pyomo_var_id = pyomo_var_id
-        self.lower_expr = lower_expr
-        self.upper_expr = upper_expr
-        self.var_map = var_map
-        self.highs = highs
+# class _MutableVarBounds(object):
+#     def __init__(self, lower_expr, upper_expr, pyomo_var_id, var_map, cp_model):
+#         self.pyomo_var_id = pyomo_var_id
+#         self.lower_expr = lower_expr
+#         self.upper_expr = upper_expr
+#         self.var_map = var_map
+#         self.cp_model = cp_model
 
-    def update(self):
-        col_ndx = self.var_map[self.pyomo_var_id]
-        lb = value(self.lower_expr)
-        ub = value(self.upper_expr)
-        self.highs.changeColBounds(col_ndx, lb, ub)
-
-
-class _MutableLinearCoefficient(object):
-    def __init__(self, pyomo_con, pyomo_var_id, con_map, var_map, expr, highs):
-        self.expr = expr
-        self.highs = highs
-        self.pyomo_var_id = pyomo_var_id
-        self.pyomo_con = pyomo_con
-        self.con_map = con_map
-        self.var_map = var_map
-
-    def update(self):
-        row_ndx = self.con_map[self.pyomo_con]
-        col_ndx = self.var_map[self.pyomo_var_id]
-        self.highs.changeCoeff(row_ndx, col_ndx, value(self.expr))
+#     def update(self):
+#         col_ndx = self.var_map[self.pyomo_var_id]
+#         lb = value(self.lower_expr)
+#         ub = value(self.upper_expr)
+#         self.highs.changeColBounds(col_ndx, lb, ub)
 
 
-class _MutableObjectiveCoefficient(object):
-    def __init__(self, pyomo_var_id, var_map, expr, highs):
-        self.expr = expr
-        self.highs = highs
-        self.pyomo_var_id = pyomo_var_id
-        self.var_map = var_map
+# class _MutableLinearCoefficient(object):
+#     def __init__(self, pyomo_con, pyomo_var_id, con_map, var_map, expr, highs):
+#         self.expr = expr
+#         self.highs = highs
+#         self.pyomo_var_id = pyomo_var_id
+#         self.pyomo_con = pyomo_con
+#         self.con_map = con_map
+#         self.var_map = var_map
 
-    def update(self):
-        col_ndx = self.var_map[self.pyomo_var_id]
-        self.highs.changeColCost(col_ndx, value(self.expr))
-
-
-class _MutableObjectiveOffset(object):
-    def __init__(self, expr, highs):
-        self.expr = expr
-        self.highs = highs
-
-    def update(self):
-        self.highs.changeObjectiveOffset(value(self.expr))
+#     def update(self):
+#         row_ndx = self.con_map[self.pyomo_con]
+#         col_ndx = self.var_map[self.pyomo_var_id]
+#         self.highs.changeCoeff(row_ndx, col_ndx, value(self.expr))
 
 
-class _MutableConstraintBounds(object):
-    def __init__(self, lower_expr, upper_expr, pyomo_con, con_map, highs):
-        self.lower_expr = lower_expr
-        self.upper_expr = upper_expr
-        self.con = pyomo_con
-        self.con_map = con_map
-        self.highs = highs
+# class _MutableObjectiveCoefficient(object):
+#     def __init__(self, pyomo_var_id, var_map, expr, highs):
+#         self.expr = expr
+#         self.highs = highs
+#         self.pyomo_var_id = pyomo_var_id
+#         self.var_map = var_map
 
-    def update(self):
-        row_ndx = self.con_map[self.con]
-        lb = value(self.lower_expr)
-        ub = value(self.upper_expr)
-        self.highs.changeRowBounds(row_ndx, lb, ub)
+#     def update(self):
+#         col_ndx = self.var_map[self.pyomo_var_id]
+#         self.highs.changeColCost(col_ndx, value(self.expr))
 
 
-@SolverFactory.register('appsi_highs_nelson', doc='APPSI HiGHS Nelson')
-class Highs(PersistentBase, PersistentSolver):
+# class _MutableConstraintBounds(object):
+#     def __init__(self, lower_expr, upper_expr, pyomo_con, con_map, highs):
+#         self.lower_expr = lower_expr
+#         self.upper_expr = upper_expr
+#         self.con = pyomo_con
+#         self.con_map = con_map
+#         self.highs = highs
+
+#     def update(self):
+#         row_ndx = self.con_map[self.con]
+#         lb = value(self.lower_expr)
+#         ub = value(self.upper_expr)
+#         self.highs.changeRowBounds(row_ndx, lb, ub)
+
+
+@SolverFactory.register('appsi_cpsat', doc='APPSI CP-SAT interfrace')
+class Cpsat(PersistentBase, PersistentSolver):
     """
-    Interface to HiGHS
+    Interface to CP-SAT
     """
 
     _available = None
 
     def __init__(self, only_child_vars=True):
         super().__init__(only_child_vars=only_child_vars)
-        self._config = HighsConfig()
+        self._config = CpsatConfig()
         self._solver_options = dict()
         self._solver_model = None
+        self._symbol_map = SymbolMap()
+        self._labeler = None
         self._pyomo_var_to_solver_var_map = dict()
         self._pyomo_con_to_solver_con_map = dict()
         self._solver_con_to_pyomo_con_map = dict()
         self._mutable_helpers = dict()
         self._mutable_bounds = dict()
         self._objective_helpers = list()
-        self._last_results_object: Optional[HighsResults] = None
+        self._last_results_object: Optional[CpsatResults] = None
         self._sol = None
 
     def available(self):
-        if highspy_available:
-            return self.Availability.FullLicense
-        else:
-            return self.Availability.NotFound
+        """
+        TODO: check for actual availability
+        """
+        return self.Availability.FullLicense
 
     def version(self):
+        """
+        TODO: return actual version
+        """
         version = (
-            highspy.HIGHS_VERSION_MAJOR,
-            highspy.HIGHS_VERSION_MINOR,
-            highspy.HIGHS_VERSION_PATCH,
+            9,
+            6,
+            2534
         )
         return version
 
     @property
-    def config(self) -> HighsConfig:
+    def config(self) -> CpsatConfig:
         return self._config
 
     @config.setter
-    def config(self, val: HighsConfig):
+    def config(self, val: CpsatConfig):
         self._config = val
 
     @property
-    def highs_options(self):
+    def cpsat_options(self):
         """
         A dictionary mapping solver options to values for those options. These
         are solver specific.
@@ -194,8 +192,8 @@ class Highs(PersistentBase, PersistentSolver):
         """
         return self._solver_options
 
-    @highs_options.setter
-    def highs_options(self, val: Dict):
+    @cpsat_options.setter
+    def cpsat_options(self, val: Dict):
         self._solver_options = val
 
     @property
@@ -205,7 +203,7 @@ class Highs(PersistentBase, PersistentSolver):
 
     def _solve(self, timer: HierarchicalTimer):
         config = self.config
-        options = self.highs_options
+        options = self.cpsat_options
 
         ostreams = [
             LogStream(
@@ -217,25 +215,29 @@ class Highs(PersistentBase, PersistentSolver):
 
         with TeeStream(*ostreams) as t:
             with capture_output(output=t.STDOUT, capture_fd=True):
-                self._solver_model.setOptionValue('log_to_console', True)
-                if config.logfile != '':
-                    self._solver_model.setOptionValue('log_file', config.logfile)
+                """
+                TODO: configure options
+                """
+                # self._solver_model.setOptionValue('log_to_console', True)
+                # if config.logfile != '':
+                #     self._solver_model.setOptionValue('log_file', config.logfile)
 
-                if config.time_limit is not None:
-                    self._solver_model.setOptionValue('time_limit', config.time_limit)
-                if config.mip_gap is not None:
-                    self._solver_model.setOptionValue('mip_rel_gap', config.mip_gap)
+                # if config.time_limit is not None:
+                #     self._solver_model.setOptionValue('time_limit', config.time_limit)
+                # if config.mip_gap is not None:
+                #     self._solver_model.setOptionValue('mip_rel_gap', config.mip_gap)
 
-                for key, option in options.items():
-                    self._solver_model.setOptionValue(key, option)
+                # for key, option in options.items():
+                #     self._solver_model.setOptionValue(key, option)
                 timer.start('optimize')
-                self._solver_model.run()
+                solver = cp_model.CpSolver()
+                solver.Solve(self._solver_model)
                 timer.stop('optimize')
 
         return self._postsolve(timer)
 
     def solve(self, model, timer: HierarchicalTimer = None) -> Results:
-        print('Hello')
+        print('Hello, this is the Pyomo APPSI CP-SAT interface')
         StaleFlagManager.mark_all_as_stale()
         if self._last_results_object is not None:
             self._last_results_object.solution_loader.invalidate()
@@ -256,6 +258,9 @@ class Highs(PersistentBase, PersistentSolver):
         return res
 
     def _process_domain_and_bounds(self, var_id):
+        """
+        TODO: skipped for now, need to convert to CP-SAT
+        """
         _v, _lb, _ub, _fixed, _domain_interval, _value = self._vars[var_id]
         lb, ub, step = _domain_interval
         if lb is None:
@@ -300,42 +305,46 @@ class Highs(PersistentBase, PersistentSolver):
         return lb, ub, vtype
 
     def _add_variables(self, variables: List[_GeneralVarData]):
-        self._sol = None
-        if self._last_results_object is not None:
-            self._last_results_object.solution_loader.invalidate()
+        var_names = list()
+        vtypes = list()
         lbs = list()
         ubs = list()
-        indices = list()
-        vtypes = list()
-
-        current_num_vars = len(self._pyomo_var_to_solver_var_map)
-        for v in variables:
-            v_id = id(v)
-            lb, ub, vtype = self._process_domain_and_bounds(v_id)
+        mutable_lbs = dict()
+        mutable_ubs = dict()
+        for ndx, var in enumerate(variables):
+            varname = self._symbol_map.getSymbol(var, self._labeler)
+            lb, ub, vtype = self._process_domain_and_bounds(
+                var, id(var), mutable_lbs, mutable_ubs, ndx, None
+            )
+            var_names.append(varname)
+            vtypes.append(vtype)
             lbs.append(lb)
             ubs.append(ub)
-            vtypes.append(vtype)
-            indices.append(current_num_vars)
-            self._pyomo_var_to_solver_var_map[v_id] = current_num_vars
-            current_num_vars += 1
 
-        self._solver_model.addVars(
-            len(lbs), np.array(lbs, dtype=np.double), np.array(ubs, dtype=np.double)
+        gurobi_vars = self._solver_model.addVars(
+            len(variables), lb=lbs, ub=ubs, vtype=vtypes, name=var_names
         )
-        self._solver_model.changeColsIntegrality(
-            len(vtypes), np.array(indices), np.array(vtypes)
-        )
+
+        for ndx, pyomo_var in enumerate(variables):
+            gurobi_var = gurobi_vars[ndx]
+            self._pyomo_var_to_solver_var_map[id(pyomo_var)] = gurobi_var
+        for ndx, mutable_bound in mutable_lbs.items():
+            mutable_bound.var = gurobi_vars[ndx]
+        for ndx, mutable_bound in mutable_ubs.items():
+            mutable_bound.var = gurobi_vars[ndx]
+        self._vars_added_since_update.update(variables)
+        self._needs_updated = True
 
     def _add_params(self, params: List[_ParamData]):
         pass
 
     def _reinit(self):
         saved_config = self.config
-        saved_options = self.highs_options
+        saved_options = self.cpsat_options
         saved_update_config = self.update_config
         self.__init__(only_child_vars=self._only_child_vars)
         self.config = saved_config
-        self.highs_options = saved_options
+        self.cpsat_options = saved_options
         self.update_config = saved_update_config
 
     def set_instance(self, model):
@@ -352,7 +361,12 @@ class Highs(PersistentBase, PersistentSolver):
         if self.use_extensions and cmodel_available:
             self._expr_types = cmodel.PyomoExprTypes()
 
-        self._solver_model = highspy.Highs()
+        if self.config.symbolic_solver_labels:
+            self._labeler = TextLabeler()
+        else:
+            self._labeler = NumericLabeler('x')
+
+        self._solver_model = cp_model.CpModel()
         self.add_block(model)
         if self._objective is None:
             self.set_objective(None)
