@@ -387,14 +387,24 @@ class CpsatDirect(DirectSolver):
             soln.gap = None
 
         # These are all messed up
+        number_of_binary_variables = 0
+        number_of_integer_variables = 0
+        for var in cpsat_model_proto.variables:
+            if len(var.domain) == 2 and var.domain[0] == 0 and var.domain[1] == 1:
+                number_of_binary_variables += 1
+            else:
+                number_of_integer_variables +=1
+
         self.results.problem.number_of_constraints = len(cpsat_model_proto.constraints)
-        self.results.problem.number_of_nonzeros = None
         self.results.problem.number_of_variables = len(cpsat_model_proto.variables)
-        self.results.problem.number_of_binary_variables = 0
-        self.results.problem.number_of_integer_variables = len(cpsat_model_proto.variables)
+        self.results.problem.number_of_binary_variables = number_of_binary_variables
+        self.results.problem.number_of_integer_variables = number_of_integer_variables
         self.results.problem.number_of_continuous_variables = 0
         self.results.problem.number_of_objectives = 1
+        # TODO: can't find a way to get this in the Python API without a callback
         self.results.problem.number_of_solutions = None
+        # TODO: can't find a way to get this easily in the Python API
+        self.results.problem.number_of_nonzeros = None
 
         if self._save_results:
             if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
