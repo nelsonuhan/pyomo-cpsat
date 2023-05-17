@@ -25,6 +25,8 @@ import pyomo.core.base.var
 
 from ortools.sat.python import cp_model
 
+logger = logging.getLogger('pyomo.solvers')
+
 
 class DegreeError(ValueError):
     pass
@@ -32,11 +34,14 @@ class DegreeError(ValueError):
 
 @SolverFactory.register('cpsat', doc='Direct Python interface to CP-SAT')
 class CpsatDirect(DirectSolver):
-    def __init__(self, **kwds):
-        if 'type' not in kwds:
-            kwds['type'] = 'cpsat_direct'
+    _name = None
+    _version = None
 
+    def __init__(self, **kwds):
+        kwds['type'] = 'cpsat_direct'
         super(CpsatDirect, self).__init__(**kwds)
+
+        self._python_api_exists = True
 
         self._max_obj_degree = 1
         self._max_constraint_degree = 1
@@ -58,7 +63,7 @@ class CpsatDirect(DirectSolver):
     def version(self):
         return (0, 0, 0)
 
-    def _get_expr_from_pyomo_repn(self, repn: StandardRepn, max_degree=1):
+    def _get_expr_from_pyomo_repn(self, repn, max_degree=1):
         referenced_vars = ComponentSet()
 
         degree = repn.polynomial_degree()
@@ -75,6 +80,8 @@ class CpsatDirect(DirectSolver):
             )
         else:
             cpsat_expr = 0
+
+        cpsat_expr += repn.constant
 
         return cpsat_expr, referenced_vars
 
@@ -114,7 +121,14 @@ class CpsatDirect(DirectSolver):
         return lb, ub
 
     def _add_var(self, var):
+        # CP-SAT only allows integer variables
+        if var.is_continuous():
+            raise ValueError(
+                "Cannot use continuous variables in CP-SAT."
+            )
+
         varname = self._symbol_map.getSymbol(var, self._labeler)
+        # print(varname)
         lb, ub = self._cpsat_bounds_from_var(var)
 
         cpsat_var = self._solver_model.NewIntVar(lb, ub, varname)
@@ -122,8 +136,6 @@ class CpsatDirect(DirectSolver):
         self._pyomo_var_to_solver_var_map[var] = cpsat_var
         self._solver_var_to_pyomo_var_map[cpsat_var] = var
         self._referenced_variables[var] = 0
-
-        self._needs_updated = True
 
     def _set_instance(self, model, kwds={}):
         self._range_constraints = set()
@@ -188,34 +200,34 @@ class CpsatDirect(DirectSolver):
                 )
 
         if con.equality:
-            cpsat_con = self._solver_model.AddLinearConstraint(
-                cpsat_expr, int(value(con.lower)), int(value(con.lower))
-            )
+            cpsat_lb = int(value(con.lower))
+            cpsat_ub = int(value(con.lower))
         elif con.has_lb() and con.has_ub():
-            cpsat_con = self._solver_model.AddLinearConstraint(
-                cpsat_expr, int(value(con.lower)), int(value(con.upper))
-            )
+            cpsat_lb = int(value(con.lower))
+            cpsat_ub = int(value(con.upper))
         elif con.has_lb():
-            cpsat_con = self._solver_model.AddLinearConstraint(
-                cpsat_expr, int(value(con.lower)), cp_model.INT_MAX
-            )
+            cpsat_lb = int(value(con.lower))
+            cpsat_ub = cp_model.INT_MAX
         elif con.has_ub():
-            cpsat_con = self._solver_model.AddLinearConstraint(
-                cpsat_expr, cp_model.INT_MIN, int(value(con.upper))
-            )
+            cpsat_lb = cp_model.INT_MIN
+            cpsat_ub = int(value(con.upper))
         else:
             raise ValueError(
                 "Constraint does not have a lower "
                 "or an upper bound: {0} \n".format(con)
             )
 
+        cpsat_con = self._solver_model.AddLinearConstraint(
+            cpsat_expr, cpsat_lb, cpsat_ub
+        )
+        cpsat_con_proto = cpsat_con.Proto()
+        cpsat_con_proto.name = conname
+
         for var in referenced_vars:
             self._referenced_variables[var] += 1
         self._vars_referenced_by_con[con] = referenced_vars
         self._pyomo_con_to_solver_con_map[con] = cpsat_con
         self._solver_con_to_pyomo_con_map[cpsat_con] = con
-
-        self._needs_updated = True
 
     def _set_objective(self, obj):
         if self._objective is not None:
@@ -243,8 +255,6 @@ class CpsatDirect(DirectSolver):
 
         self._objective = obj
         self._vars_referenced_by_obj = referenced_vars
-
-        self._needs_updated = True
 
     def _apply_solver(self):
         StaleFlagManager.mark_all_as_stale()
@@ -376,6 +386,7 @@ class CpsatDirect(DirectSolver):
         except TypeError:
             soln.gap = None
 
+        # These are all messed up
         self.results.problem.number_of_constraints = len(cpsat_model_proto.constraints)
         self.results.problem.number_of_nonzeros = None
         self.results.problem.number_of_variables = len(cpsat_model_proto.variables)
@@ -385,9 +396,6 @@ class CpsatDirect(DirectSolver):
         self.results.problem.number_of_objectives = 1
         self.results.problem.number_of_solutions = None
 
-        # # if a solve was stopped by a limit, we still need to check to
-        # see if there is a solution available - this may not always
-        # be the case, both in LP and MIP contexts.
         if self._save_results:
             if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
                 self.load_vars()
