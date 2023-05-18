@@ -1,3 +1,10 @@
+# TODO
+# - import - use attempt_import?
+# - version number
+# - availability
+# - parameters
+# - log results to file
+# - other error checking
 import logging
 import re
 import sys
