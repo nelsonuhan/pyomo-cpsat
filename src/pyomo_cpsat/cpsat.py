@@ -39,6 +39,12 @@ logger = logging.getLogger('pyomo.solvers')
 class DegreeError(ValueError):
     pass
 
+def _is_numeric(x):
+    try:
+        float(x)
+    except ValueError:
+        return False
+    return True
 
 @SolverFactory.register('cpsat', doc='Direct Python interface to CP-SAT')
 class CpsatDirect(DirectSolver):
@@ -277,25 +283,40 @@ class CpsatDirect(DirectSolver):
         #     self._solver_model.setParam('LogFile', self._log_file)
         #     print("Solver log file: " + self._log_file)
 
-        # # Options accepted by gurobi (case insensitive):
-        # for key, option in self.options.items():
-        #     # When options come from the pyomo command, all
-        #     # values are string types, so we try to cast
-        #     # them to a numeric value in the event that
-        #     # setting the parameter fails.
-        #     try:
-        #         self._solver_model.setParam(key, option)
-        #     except TypeError:
-        #         # we place the exception handling for
-        #         # checking the cast of option to a float in
-        #         # another function so that we can simply
-        #         # call raise here instead of except
-        #         # TypeError as e / raise e, because the
-        #         # latter does not preserve the Gurobi stack
-        #         # trace
-        #         if not _is_numeric(option):
-        #             raise
-        #         self._solver_model.setParam(key, float(option))
+        # Options accepted by CP-SAT:
+        # google/or-tools/ortools/sat/sat_parameters.proto
+        for key, option in self.options.items():
+            # "repeated" fields need to be treated separately
+            repeated_fields = [
+                'RestartAlgorithm',
+                'subsolvers',
+                'extra_subsolvers',
+                'ignore_subsolvers'
+            ]
+
+            # In this case, option is a list
+            # TODO: handle option properly when stringified list
+            # (see below re: pyomo command)
+            if key in repeated_fields:
+                try:
+                    getattr(self._solver_solver.parameters, key).extend(option)
+                except TypeError:
+                    raise
+
+            else:
+                # When options come from the pyomo command, all values are string
+                # types, so we try to cast them to a numeric value in the event
+                # that setting the parameter fails.
+                try:
+                    setattr(self._solver_solver.parameters, key, option)
+                except TypeError:
+                    # We place the exception handling for checking the cast of
+                    # option to a float in another function so that we can simply
+                    # call raise here instead of except TypeError as e / raise e,
+                    # because the latter does not preserve the Gurobi stack trace
+                    if not _is_numeric(option):
+                        raise
+                    setattr(self._solver_solver.parameters, key, float(option))
 
         self._solver_status = self._solver_solver.Solve(self._solver_model)
 
