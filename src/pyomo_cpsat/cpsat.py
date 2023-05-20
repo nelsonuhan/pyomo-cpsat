@@ -5,6 +5,7 @@
 # - parameters
 # - log results to file
 # - other error checking
+# - package as module
 import logging
 import re
 import sys
