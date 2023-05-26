@@ -402,11 +402,11 @@ class CpsatDirect(DirectSolver):
         self.results.problem.lower_bound = None
 
         if self.results.problem.sense == minimize:
-            self.results.problem.upper_bound = self._solver_solver.BestObjectiveBound()
-            self.results.problem.lower_bound = self._solver_solver.ObjectiveValue()
-        elif self.results.problem.sense == maximize:
-            self.results.problem.upper_bound = self._solver_solver.ObjectiveValue()
             self.results.problem.lower_bound = self._solver_solver.BestObjectiveBound()
+            self.results.problem.upper_bound = self._solver_solver.ObjectiveValue()
+        elif self.results.problem.sense == maximize:
+            self.results.problem.lower_bound = self._solver_solver.ObjectiveValue()
+            self.results.problem.upper_bound = self._solver_solver.BestObjectiveBound()
 
         try:
             soln.gap = (
