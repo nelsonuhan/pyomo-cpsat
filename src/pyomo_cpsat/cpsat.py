@@ -39,12 +39,14 @@ logger = logging.getLogger('pyomo.solvers')
 class DegreeError(ValueError):
     pass
 
+
 def _is_numeric(x):
     try:
         float(x)
     except ValueError:
         return False
     return True
+
 
 @SolverFactory.register('cpsat', doc='Direct Python interface to CP-SAT')
 class CpsatDirect(DirectSolver):
@@ -89,8 +91,11 @@ class CpsatDirect(DirectSolver):
         if len(repn.linear_vars) > 0:
             referenced_vars.update(repn.linear_vars)
             cpsat_expr = cp_model.LinearExpr.WeightedSum(
-                [self._pyomo_var_to_solver_var_map[i] for i in repn.linear_vars],
-                repn.linear_coefs
+                [
+                    self._pyomo_var_to_solver_var_map[i]
+                    for i in repn.linear_vars
+                ],
+                repn.linear_coefs,
             )
         else:
             cpsat_expr = 0
@@ -103,7 +108,9 @@ class CpsatDirect(DirectSolver):
         repn = generate_standard_repn(expr, quadratic=False)
 
         try:
-            cpsat_expr, referenced_vars = self._get_expr_from_pyomo_repn(repn, max_degree)
+            cpsat_expr, referenced_vars = self._get_expr_from_pyomo_repn(
+                repn, max_degree
+            )
         except DegreeError as e:
             msg = e.args[0]
             msg += f'\nexpr: {expr}'
@@ -120,16 +127,16 @@ class CpsatDirect(DirectSolver):
             lb = value(var.lb)
         else:
             raise ValueError(
-                f"Encountered a variable ({var.name}) with no lower bound, "
-                "which is invalid for CP-SAT instances."
+                f'Encountered a variable ({var.name}) with no lower bound, '
+                'which is invalid for CP-SAT instances.'
             )
 
         if var.has_ub():
             ub = value(var.ub)
         else:
             raise ValueError(
-                f"Encountered a variable ({var.name}) with no upper bound, "
-                "which is invalid for CP-SAT instances."
+                f'Encountered a variable ({var.name}) with no upper bound, '
+                'which is invalid for CP-SAT instances.'
             )
 
         return lb, ub
@@ -137,9 +144,7 @@ class CpsatDirect(DirectSolver):
     def _add_var(self, var):
         # CP-SAT only allows integer variables
         if var.is_continuous():
-            raise ValueError(
-                "Cannot use continuous variables in CP-SAT."
-            )
+            raise ValueError('Cannot use continuous variables in CP-SAT.')
 
         varname = self._symbol_map.getSymbol(var, self._labeler)
         # print(varname)
@@ -169,13 +174,13 @@ class CpsatDirect(DirectSolver):
                 if var.fixed:
                     if not self._output_fixed_variable_bounds:
                         raise ValueError(
-                            "Encountered a fixed variable (%s) inside "
-                            "an active objective or constraint "
-                            "expression on model %s, which is usually "
-                            "indicative of a preprocessing error. Use "
+                            'Encountered a fixed variable (%s) inside '
+                            'an active objective or constraint '
+                            'expression on model %s, which is usually '
+                            'indicative of a preprocessing error. Use '
                             "the IO-option 'output_fixed_variable_bounds=True' "
-                            "to suppress this error and fix the variable "
-                            "by overwriting its bounds in the CP-SAT instance."
+                            'to suppress this error and fix the variable '
+                            'by overwriting its bounds in the CP-SAT instance.'
                             % (var.name, self._pyomo_model.name)
                         )
 
@@ -204,13 +209,13 @@ class CpsatDirect(DirectSolver):
         if con.has_lb():
             if not is_fixed(con.lower):
                 raise ValueError(
-                    f"Lower bound of constraint {con} is not constant."
+                    f'Lower bound of constraint {con} is not constant.'
                 )
 
         if con.has_ub():
             if not is_fixed(con.upper):
                 raise ValueError(
-                    f"Upper bound of constraint {con} is not constant."
+                    f'Upper bound of constraint {con} is not constant.'
                 )
 
         if con.equality:
@@ -227,8 +232,8 @@ class CpsatDirect(DirectSolver):
             cpsat_ub = int(value(con.upper))
         else:
             raise ValueError(
-                "Constraint does not have a lower "
-                "or an upper bound: {0} \n".format(con)
+                'Constraint does not have a lower '
+                'or an upper bound: {0} \n'.format(con)
             )
 
         cpsat_con = self._solver_model.AddLinearConstraint(
@@ -291,7 +296,7 @@ class CpsatDirect(DirectSolver):
                 'RestartAlgorithm',
                 'subsolvers',
                 'extra_subsolvers',
-                'ignore_subsolvers'
+                'ignore_subsolvers',
             ]
 
             # In this case, option is a list
@@ -326,7 +331,7 @@ class CpsatDirect(DirectSolver):
         # Disable extraction of all suffixes
         if self._suffixes:
             raise RuntimeError(
-                "***The cpsat solver interface cannot extract solution suffixes"
+                '***The cpsat solver interface cannot extract solution suffixes'
             )
 
         cpsat_model = self._solver_model
@@ -347,43 +352,53 @@ class CpsatDirect(DirectSolver):
                 'found or the problem was not proven infeasible before the '
                 ' solver stopped.'
             )
-            self.results.solver.termination_condition = TerminationCondition.unknown
+            self.results.solver.termination_condition = (
+                TerminationCondition.unknown
+            )
             soln.status = SolutionStatus.unknown
         elif status == cp_model.OPTIMAL:
             self.results.solver.status = SolverStatus.ok
             self.results.solver.termination_message = (
                 'An optimal feasible solution was found.'
             )
-            self.results.solver.termination_condition = TerminationCondition.optimal
+            self.results.solver.termination_condition = (
+                TerminationCondition.optimal
+            )
             soln.status = SolutionStatus.optimal
         elif status == cp_model.FEASIBLE:
             self.results.solver.status = SolverStatus.warning
-            self.results.solver.termination_message = (
-                'A feasible solution was found, but we do not know if it is optimal.'
+            self.results.solver.termination_message = 'A feasible solution was found, but we do not know if it is optimal.'
+            self.results.solver.termination_condition = (
+                TerminationCondition.feasible
             )
-            self.results.solver.termination_condition = TerminationCondition.feasible
             soln.status = SolutionStatus.feasible
 
         elif status == cp_model.INFEASIBLE:
             self.results.solver.status = SolverStatus.warning
             self.results.solver.termination_message = (
-               'The problem was proven infeasible.'
+                'The problem was proven infeasible.'
             )
-            self.results.solver.termination_condition = TerminationCondition.infeasible
+            self.results.solver.termination_condition = (
+                TerminationCondition.infeasible
+            )
             soln.status = SolutionStatus.infeasible
         elif status == cp_model.MODEL_INVALID:
             self.results.solver.status = SolverStatus.aborted
             self.results.solver.termination_message = (
                 'The given model did not pass the validation step.'
             )
-            self.results.solver.termination_condition = TerminationCondition.invalidProblem
+            self.results.solver.termination_condition = (
+                TerminationCondition.invalidProblem
+            )
             soln.status = SolutionStatus.error
         else:
             self.results.solver.status = SolverStatus.error
             self.results.solver.termination_message = (
-                "Unhandled CP-SAT solver status (" + str(status) + ")"
+                'Unhandled CP-SAT solver status (' + str(status) + ')'
             )
-            self.results.solver.termination_condition = TerminationCondition.error
+            self.results.solver.termination_condition = (
+                TerminationCondition.error
+            )
             soln.status = SolutionStatus.error
 
         self.results.problem.name = ''
@@ -394,23 +409,33 @@ class CpsatDirect(DirectSolver):
             self.results.problem.sense = maximize
         else:
             raise RuntimeError(
-                'Unrecognized CP-SAT objective sense - scaling_factor = {0}'
-                .format(cpsat_model.__model.objective.scaling_factor)
+                'Unrecognized CP-SAT objective sense - scaling_factor = {0}'.format(
+                    cpsat_model_proto.objective.scaling_factor
+                )
             )
 
         self.results.problem.upper_bound = None
         self.results.problem.lower_bound = None
 
         if self.results.problem.sense == minimize:
-            self.results.problem.lower_bound = self._solver_solver.BestObjectiveBound()
-            self.results.problem.upper_bound = self._solver_solver.ObjectiveValue()
+            self.results.problem.lower_bound = (
+                self._solver_solver.BestObjectiveBound()
+            )
+            self.results.problem.upper_bound = (
+                self._solver_solver.ObjectiveValue()
+            )
         elif self.results.problem.sense == maximize:
-            self.results.problem.lower_bound = self._solver_solver.ObjectiveValue()
-            self.results.problem.upper_bound = self._solver_solver.BestObjectiveBound()
+            self.results.problem.lower_bound = (
+                self._solver_solver.ObjectiveValue()
+            )
+            self.results.problem.upper_bound = (
+                self._solver_solver.BestObjectiveBound()
+            )
 
         try:
             soln.gap = (
-                self.results.problem.upper_bound - self.results.problem.lower_bound
+                self.results.problem.upper_bound
+                - self.results.problem.lower_bound
             )
         except TypeError:
             soln.gap = None
@@ -419,15 +444,27 @@ class CpsatDirect(DirectSolver):
         number_of_binary_variables = 0
         number_of_integer_variables = 0
         for var in cpsat_model_proto.variables:
-            if len(var.domain) == 2 and var.domain[0] == 0 and var.domain[1] == 1:
+            if (
+                len(var.domain) == 2
+                and var.domain[0] == 0
+                and var.domain[1] == 1
+            ):
                 number_of_binary_variables += 1
             else:
-                number_of_integer_variables +=1
+                number_of_integer_variables += 1
 
-        self.results.problem.number_of_constraints = len(cpsat_model_proto.constraints)
-        self.results.problem.number_of_variables = len(cpsat_model_proto.variables)
-        self.results.problem.number_of_binary_variables = number_of_binary_variables
-        self.results.problem.number_of_integer_variables = number_of_integer_variables
+        self.results.problem.number_of_constraints = len(
+            cpsat_model_proto.constraints
+        )
+        self.results.problem.number_of_variables = len(
+            cpsat_model_proto.variables
+        )
+        self.results.problem.number_of_binary_variables = (
+            number_of_binary_variables
+        )
+        self.results.problem.number_of_integer_variables = (
+            number_of_integer_variables
+        )
         self.results.problem.number_of_continuous_variables = 0
         self.results.problem.number_of_objectives = 1
         # TODO: can't find a way to get this in the Python API without a callback
