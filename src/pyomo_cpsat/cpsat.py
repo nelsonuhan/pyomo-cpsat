@@ -403,16 +403,10 @@ class CpsatDirect(DirectSolver):
 
         self.results.problem.name = ''
 
-        if cpsat_model_proto.objective.scaling_factor > 0:
+        if cpsat_model_proto.objective.scaling_factor >= 0:
             self.results.problem.sense = minimize
         elif cpsat_model_proto.objective.scaling_factor < 0:
             self.results.problem.sense = maximize
-        else:
-            raise RuntimeError(
-                'Unrecognized CP-SAT objective sense - scaling_factor = {0}'.format(
-                    cpsat_model_proto.objective.scaling_factor
-                )
-            )
 
         self.results.problem.upper_bound = None
         self.results.problem.lower_bound = None
