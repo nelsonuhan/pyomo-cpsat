@@ -1,1 +1,1 @@
-from .cpsat import CpsatDirect
+from .cpsat import Cpsat
