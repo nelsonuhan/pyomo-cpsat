@@ -1,137 +1,407 @@
+import io
+import datetime
 import logging
 
-from typing import Sequence, Dict, Optional, Mapping, List, Tuple
+from typing import Sequence, Optional, Mapping, Tuple, NoReturn
 
-from pyomo.core.base.constraint import ConstraintData
-from pyomo.core.base.var import VarData
-from pyomo.core.base.param import ParamData
+from pyomo.common.timing import HierarchicalTimer
+from pyomo.core.base.constraint import Constraint
+from pyomo.core.base.var import Var, VarData
 from pyomo.core.base.block import BlockData
-from pyomo.core.base.objective import Objective, ObjectiveData
+from pyomo.core.expr.numvalue import value, is_fixed
+from pyomo.core.kernel.objective import minimize, maximize
 from pyomo.core.staleflag import StaleFlagManager
 
-from pyomo.common.config import document_kwargs_from_configdict, ConfigValue
+from pyomo.common.config import document_kwargs_from_configdict
+from pyomo.common.errors import ApplicationError
 from pyomo.common.dependencies import attempt_import
+from pyomo.common.tee import TeeStream, capture_output
 
-from pyomo.contrib.solver.common.base import PersistentSolverBase, Availability
-from pyomo.contrib.solver.common.config import PersistentSolverConfig
-from pyomo.contrib.solver.common.results import Results
+from pyomo.repn import generate_standard_repn
+
+from pyomo.contrib.solver.common.base import SolverBase, Availability
+from pyomo.contrib.solver.common.config import BranchAndBoundConfig
+from pyomo.contrib.solver.common.results import (
+    Results,
+    SolutionStatus,
+    TerminationCondition,
+)
+from pyomo.contrib.solver.common.solution_loader import SolutionLoaderBase
+from pyomo.contrib.solver.common.util import (
+    NoFeasibleSolutionError,
+    NoOptimalSolutionError,
+    IncompatibleModelError,
+    get_objective,
+)
 
 logger = logging.getLogger(__name__)
 
-cpsat, cpsat_available = attempt_import('ortools.sat.python')
+ortools, ortools_available = attempt_import('ortools')
+
+if ortools_available:
+    from ortools.sat.python import cp_model
+    from ortools.init.python.init import OrToolsVersion
 
 
-class Cpsat(PersistentSolverBase):
+class CpsatSolutionLoader(SolutionLoaderBase):
     """
-    Interface to CP-SAT
+    Pyomo solution loader for CP-SAT
     """
 
-    CONFIG = PersistentSolverConfig()
+    def __init__(
+        self,
+        cpsat_solver: cp_model.CpSolver,
+        pyomo_vars: Sequence[VarData],
+        pyomo_cpsat_map=Mapping[int, cp_model.IntVar],
+    ):
+        self.cpsat_solver = cpsat_solver
+        self.pyomo_vars = pyomo_vars
+        self.pyomo_cpsat_map = pyomo_cpsat_map
+
+    def load_vars(self, vars_to_load: Optional[Sequence[VarData]] = None) -> NoReturn:
+        if vars_to_load is None:
+            vars_to_load = self.pyomo_vars
+
+        for v in vars_to_load:
+            cpsat_var = self.pyomo_cpsat_map[id(v)]
+            cpsat_val = self.cpsat_solver.value(cpsat_var)
+            v.set_value(cpsat_val, skip_validation=True)
+
+        StaleFlagManager.mark_all_as_stale(delayed=True)
+
+
+class Cpsat(SolverBase):
+    """
+    Pyomo solver interface for CP-SAT
+    """
+
+    CONFIG = BranchAndBoundConfig()
 
     def __init__(self, **kwds) -> None:
+        self._treat_fixed_vars_as_params = kwds.pop('treat_fixed_vars_as_params', True)
+
         super().__init__(**kwds)
-        self._active_config = self.config
+
+        self._solver_model = None
+        self._solver_solver = None
+
+        self._model = None
+        self._vars = None
+        self._objective_sense = None
+
+        self._pyomo_var_to_solver_var_map = {}
 
     def available(self) -> Availability:
-        if cpsat_available:
+        if ortools_available:
             return Availability.FullLicense
         else:
             return Availability.NotFound
 
     def version(self) -> Tuple:
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'version'."
+        return (
+            OrToolsVersion.major_number(),
+            OrToolsVersion.minor_number(),
+            OrToolsVersion.patch_number(),
         )
 
     @document_kwargs_from_configdict(CONFIG)
     def solve(self, model: BlockData, **kwargs) -> Results:
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'solve'."
+        if not self.available():
+            c = self.__class__
+            raise ApplicationError(
+                f'Solver {c.__module__}.{c.__qualname__} is not available '
+                f'({self.available()}).'
+            )
+
+        start_timestamp = datetime.datetime.now(datetime.timezone.utc)
+
+        config = self.config(value=kwargs, preserve_implicit=True)
+
+        if config.timer is None:
+            config.timer = HierarchicalTimer()
+
+        timer = config.timer
+
+        StaleFlagManager.mark_all_as_stale()
+
+        self._model = model
+        self._solver_model = cp_model.CpModel()
+        self._solver_solver = cp_model.CpSolver()
+
+        timer.start('add_variables')
+        self._add_variables()
+        timer.stop('add_variables')
+
+        timer.start('add_constraints')
+        self._add_constraints()
+        timer.stop('add_constraints')
+
+        timer.start('set_objective')
+        self._set_objective()
+        timer.stop('set_objective')
+
+        if config.tee:
+            self._solver_solver.parameters.log_search_progress = True
+
+        if config.threads is not None:
+            self._solver_solver.parameters.num_workers = config.threads
+
+        if config.time_limit is not None:
+            self._solver_solver.parameters.max_time_in_seconds = config.time_limit
+
+        if config.rel_gap is not None:
+            self._solver_solver.parameters.relative_gap_limit = config.rel_gap
+
+        if config.abs_gap is not None:
+            self._solver_solver.parameters.absolute_gap_limit = config.abs_gap
+
+        # CP-SAT options: google/or-tools/ortools/sat/sat_parameters.proto
+        for key, opt in config.solver_options.items():
+            pyomo_equivalent_keys = {
+                'num_workers': 'threads',
+                'max_time_in_seconds': 'time_limit',
+                'relative_gap_limit': 'rel_gap',
+                'absolute_gap_limit': 'abs_gap',
+            }
+
+            eq_key = pyomo_equivalent_keys.get(key, None)
+
+            if eq_key is not None:
+                if getattr(config, eq_key) is not None:
+                    raise ValueError(
+                        f'CP-SAT solver option {key} can be specified as Pyomo option {eq_key}.'
+                    )
+
+            repeating_keys = [
+                'RestartAlgorithm',
+                'subsolvers',
+                'extra_subsolvers',
+                'ignore_subsolvers',
+            ]
+
+            if key in repeating_keys:
+                try:
+                    getattr(self._solver_solver.parameters, key).extend(opt)
+                except TypeError:
+                    raise
+
+            else:
+                try:
+                    setattr(self._solver_solver.parameters, key, opt)
+                except TypeError:
+                    raise
+
+        ostreams = [io.StringIO()] + config.tee
+        with capture_output(output=TeeStream(*ostreams), capture_fd=True):
+            timer.start('optimize')
+            self._solver_status = self._solver_solver.solve(self._solver_model)
+            timer.stop('optimize')
+
+        timer.start('load_results')
+        results = self._load_results(config.load_solutions)
+        timer.stop('load_results')
+
+        end_timestamp = datetime.datetime.now(datetime.timezone.utc)
+        results.timing_info.start_timestamp = start_timestamp
+        results.timing_info.wall_time = (
+            end_timestamp - start_timestamp
+        ).total_seconds()
+        results.timing_info.timer = timer
+
+        return results
+
+    def _cpsat_bounds_from_var(self, var):
+        if var.is_fixed():
+            val = var.value
+            return val, val
+
+        if var.has_lb():
+            lb = value(var.lb)
+        else:
+            raise ValueError(
+                f'Variable ({var.name}) has no lower bound. '
+                'CP-SAT cannot solve models with variables without lower bounds.'
+            )
+
+        if var.has_ub():
+            ub = value(var.ub)
+        else:
+            raise ValueError(
+                f'Variable ({var.name}) has no upper bound. '
+                'CP-SAT cannot solve models with variables without upper bounds.'
+            )
+
+        return lb, ub
+
+    def _add_variables(self):
+        vars = self._model.component_data_objects(Var, descend_into=True)
+
+        for v in vars:
+            v_id = id(v)
+
+            if v.is_continuous():
+                raise ValueError(
+                    'CP-SAT cannot solve models with continuous variables.'
+                )
+
+            lb, ub = self._cpsat_bounds_from_var(v)
+
+            cpsat_var = self._solver_model.new_int_var(lb, ub, v.name)
+
+            self._pyomo_var_to_solver_var_map[v_id] = cpsat_var
+
+        self._vars = vars
+
+    def _add_constraints(self):
+        fixed_vars = []
+
+        cons = self._model.component_data_objects(Constraint, descend_into=True)
+
+        for c in cons:
+            if not c.active:
+                continue
+
+            repn = generate_standard_repn(c.body, quadratic=False)
+
+            if len(repn.quadratic_vars) > 0:
+                raise IncompatibleModelError(
+                    f'Constraint {c.name} contains a quadratic expression. '
+                    'CP-SAT cannot solve models with quadratic constraints.'
+                )
+
+            if repn.nonlinear_expr is not None:
+                raise IncompatibleModelError(
+                    f'Constraint {c.name} contains a nonlinear expression. '
+                    'CP-SAT cannot solve models with nonlinear constraints.'
+                )
+
+            if not self._treat_fixed_vars_as_params:
+                for v in repn.linear_vars:
+                    if is_fixed(v):
+                        v.unfix()
+                        fixed_vars.append(v)
+
+            if len(repn.linear_vars) > 0:
+                cpsat_expr = cp_model.LinearExpr.WeightedSum(
+                    [
+                        self._pyomo_var_to_solver_var_map[id(v)]
+                        for v in repn.linear_vars
+                    ],
+                    repn.linear_coefs,
+                )
+            else:
+                cpsat_expr = 0
+
+            cpsat_expr += repn.constant
+
+            if c.has_lb():
+                cpsat_lb = int(value(c.lower))
+            else:
+                cpsat_lb = cp_model.INT_MIN
+
+            if c.has_ub():
+                cpsat_ub = int(value(c.upper))
+            else:
+                cpsat_ub = cp_model.INT_MAX
+
+            self._solver_model.add_linear_constraint(
+                cpsat_expr, cpsat_lb, cpsat_ub
+            ).with_name(c.name)
+
+        for v in fixed_vars:
+            v.fix()
+
+    def _set_objective(self):
+        obj = get_objective(self._model)
+
+        if not obj.active:
+            raise ValueError('Cannot add inactive objective to solver.')
+
+        if obj is None:
+            self._objective_sense = None
+            return
+
+        repn = generate_standard_repn(obj.expr, quadratic=False)
+
+        if len(repn.quadratic_vars) > 0:
+            raise IncompatibleModelError(
+                f'Objective {obj.name} contains a quadratic expression. '
+                'CP-SAT cannot solve models with a quadratic objective.'
+            )
+
+        if repn.nonlinear_expr is not None:
+            raise IncompatibleModelError(
+                f'Objective {obj.name} contains a nonlinear expression. '
+                'CP-SAT cannot solve models with a nonlinear objective.'
+            )
+
+        fixed_vars = []
+        if not self._treat_fixed_vars_as_params:
+            for v in repn.linear_vars:
+                if is_fixed(v):
+                    v.unfix()
+                    fixed_vars.append(v)
+
+        if len(repn.linear_vars) > 0:
+            cpsat_expr = cp_model.LinearExpr.WeightedSum(
+                [self._pyomo_var_to_solver_var_map[id(v)] for v in repn.linear_vars],
+                repn.linear_coefs,
+            )
+        else:
+            cpsat_expr = 0
+
+        cpsat_expr += repn.constant
+
+        if obj.sense == minimize:
+            self._solver_model.Minimize(cpsat_expr)
+        elif obj.sense == maximize:
+            self._solver_model.Maximize(cpsat_expr)
+        else:
+            raise ValueError(f'Objective sense {obj.sense} is not recognized.')
+
+        self._objective_sense = obj.sense
+
+        for v in fixed_vars:
+            v.fix()
+
+    def _load_results(self, load_solutions: bool):
+        results = Results()
+        results.solution_loader = CpsatSolutionLoader(
+            self._solver_solver, self._vars, self._pyomo_var_to_solver_var_map
         )
+        results.timing_info.cpsat_time = self._solver_solver.wall_time
 
-    def is_persistent(self) -> bool:
-        return True
+        # CP-SAT solver status: google/or-tools/ortools/sat/cp_model.proto
+        if self._solver_status == cp_model.UNKNOWN:
+            results.solution_status = SolutionStatus.noSolution
+            results.termination_condition = TerminationCondition.unknown
+        elif self._solver_status == cp_model.MODEL_INVALID:
+            results.solution_status = SolutionStatus.noSolution
+            results.termination_condition = TerminationCondition.error
+        elif self._solver_status == cp_model.FEASIBLE:
+            results.solution_status = SolutionStatus.feasible
+            results.termination_condition = TerminationCondition.interrupted
+        elif self._solver_status == cp_model.OPTIMAL:
+            results.solution_status = SolutionStatus.optimal
+            results.termination_condition = (
+                TerminationCondition.convergenceCriteriaSatisfied
+            )
+        else:
+            raise ValueError('CP-SAT terminated with invalid solver status.')
 
-    def _load_vars(self, vars_to_load: Optional[Sequence[VarData]] = None) -> None:
-        for var, val in self._get_primals(vars_to_load=vars_to_load).items():
-            var.set_value(val, skip_validation=True)
-        StaleFlagManager.mark_all_as_stale(delayed=True)
+        if (
+            results.solution_status != SolutionStatus.optimal
+            and config.raise_exception_on_nonoptimal_results
+        ):
+            raise NoOptimalSolutionError
 
-    def _get_primals(
-        self, vars_to_load: Optional[Sequence[VarData]] = None
-    ) -> Mapping[VarData, float]:
-        raise NotImplementedError(
-            f'{type(self)} does not support the get_primals method'
-        )
+        results.incumbent_objective = self._solver_solver.objective_value
+        results.objective_bound = self._solver_solver.best_objective_bound
 
-    def _get_duals(
-        self, cons_to_load: Optional[Sequence[ConstraintData]] = None
-    ) -> Dict[ConstraintData, float]:
-        raise NotImplementedError(f'{type(self)} does not support the get_duals method')
+        if load_solutions:
+            if self._solver_status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+                results.solution_loader.load_vars()
+            else:
+                raise NoFeasibleSolutionError
 
-    def _get_reduced_costs(
-        self, vars_to_load: Optional[Sequence[VarData]] = None
-    ) -> Mapping[VarData, float]:
-        raise NotImplementedError(
-            f'{type(self)} does not support the get_reduced_costs method'
-        )
-
-    def set_instance(self, model: BlockData):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'set_instance'."
-        )
-
-    def set_objective(self, obj: ObjectiveData):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'set_objective'."
-        )
-
-    def add_variables(self, variables: List[VarData]):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'add_variables'."
-        )
-
-    def add_parameters(self, params: List[ParamData]):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'add_parameters'."
-        )
-
-    def add_constraints(self, cons: List[ConstraintData]):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'add_constraints'."
-        )
-
-    def add_block(self, block: BlockData):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'add_block'."
-        )
-
-    def remove_variables(self, variables: List[VarData]):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'remove_variables'."
-        )
-
-    def remove_parameters(self, params: List[ParamData]):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'remove_parameters'."
-        )
-
-    def remove_constraints(self, cons: List[ConstraintData]):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'remove_constraints'."
-        )
-
-    def remove_block(self, block: BlockData):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'remove_block'."
-        )
-
-    def update_variables(self, variables: List[VarData]):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'update_variables'."
-        )
-
-    def update_parameters(self):
-        raise NotImplementedError(
-            f"Derived class {self.__class__.__name__} failed to implement required method 'update_parameters'."
-        )
+        return results
