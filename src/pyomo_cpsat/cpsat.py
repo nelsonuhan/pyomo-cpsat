@@ -86,9 +86,8 @@ class Cpsat(SolverBase):
         self._solver_solver = None
 
         self._model = None
-        self._vars = None
-        self._objective_sense = None
 
+        self._vars = []
         self._pyomo_var_to_solver_var_map = {}
 
     def available(self) -> Availability:
@@ -249,8 +248,7 @@ class Cpsat(SolverBase):
             cpsat_var = self._solver_model.new_int_var(lb, ub, v.name)
 
             self._pyomo_var_to_solver_var_map[v_id] = cpsat_var
-
-        self._vars = vars
+            self._vars.append(v)
 
     def _add_constraints(self):
         fixed_vars = []
@@ -317,10 +315,6 @@ class Cpsat(SolverBase):
         if not obj.active:
             raise ValueError('Cannot add inactive objective to solver.')
 
-        if obj is None:
-            self._objective_sense = None
-            return
-
         repn = generate_standard_repn(obj.expr, quadratic=False)
 
         if len(repn.quadratic_vars) > 0:
@@ -358,8 +352,6 @@ class Cpsat(SolverBase):
             self._solver_model.Maximize(cpsat_expr)
         else:
             raise ValueError(f'Objective sense {obj.sense} is not recognized.')
-
-        self._objective_sense = obj.sense
 
         for v in fixed_vars:
             v.fix()
