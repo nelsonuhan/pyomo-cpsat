@@ -82,6 +82,8 @@ class Cpsat(SolverBase):
 
         super().__init__(**kwds)
 
+        self._config = None
+
         self._solver_model = None
         self._solver_solver = None
 
@@ -114,12 +116,12 @@ class Cpsat(SolverBase):
 
         start_timestamp = datetime.datetime.now(datetime.timezone.utc)
 
-        config = self.config(value=kwargs, preserve_implicit=True)
+        self._config = self.config(value=kwargs, preserve_implicit=True)
 
-        if config.timer is None:
-            config.timer = HierarchicalTimer()
+        if self._config.timer is None:
+            self._config.timer = HierarchicalTimer()
 
-        timer = config.timer
+        timer = self._config.timer
 
         StaleFlagManager.mark_all_as_stale()
 
@@ -139,23 +141,23 @@ class Cpsat(SolverBase):
         self._set_objective()
         timer.stop('set_objective')
 
-        if config.tee:
+        if self._config.tee:
             self._solver_solver.parameters.log_search_progress = True
 
-        if config.threads is not None:
-            self._solver_solver.parameters.num_workers = config.threads
+        if self._config.threads is not None:
+            self._solver_solver.parameters.num_workers = self._config.threads
 
-        if config.time_limit is not None:
-            self._solver_solver.parameters.max_time_in_seconds = config.time_limit
+        if self._config.time_limit is not None:
+            self._solver_solver.parameters.max_time_in_seconds = self._config.time_limit
 
-        if config.rel_gap is not None:
-            self._solver_solver.parameters.relative_gap_limit = config.rel_gap
+        if self._config.rel_gap is not None:
+            self._solver_solver.parameters.relative_gap_limit = self._config.rel_gap
 
-        if config.abs_gap is not None:
-            self._solver_solver.parameters.absolute_gap_limit = config.abs_gap
+        if self._config.abs_gap is not None:
+            self._solver_solver.parameters.absolute_gap_limit = self._config.abs_gap
 
         # CP-SAT options: google/or-tools/ortools/sat/sat_parameters.proto
-        for key, opt in config.solver_options.items():
+        for key, opt in self._config.solver_options.items():
             pyomo_equivalent_keys = {
                 'num_workers': 'threads',
                 'max_time_in_seconds': 'time_limit',
@@ -166,7 +168,7 @@ class Cpsat(SolverBase):
             eq_key = pyomo_equivalent_keys.get(key, None)
 
             if eq_key is not None:
-                if getattr(config, eq_key) is not None:
+                if getattr(self._config, eq_key) is not None:
                     raise ValueError(
                         f'CP-SAT solver option {key} can be specified as Pyomo option {eq_key}.'
                     )
@@ -190,14 +192,14 @@ class Cpsat(SolverBase):
                 except TypeError:
                     raise
 
-        ostreams = [io.StringIO()] + config.tee
+        ostreams = [io.StringIO()] + self._config.tee
         with capture_output(output=TeeStream(*ostreams), capture_fd=True):
             timer.start('optimize')
             self._solver_status = self._solver_solver.solve(self._solver_model)
             timer.stop('optimize')
 
         timer.start('load_results')
-        results = self._load_results(config.load_solutions)
+        results = self._load_results()
         timer.stop('load_results')
 
         end_timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -356,7 +358,7 @@ class Cpsat(SolverBase):
         for v in fixed_vars:
             v.fix()
 
-    def _load_results(self, load_solutions: bool):
+    def _load_results(self):
         results = Results()
         results.solution_loader = CpsatSolutionLoader(
             self._solver_solver, self._vars, self._pyomo_var_to_solver_var_map
@@ -383,14 +385,14 @@ class Cpsat(SolverBase):
 
         if (
             results.solution_status != SolutionStatus.optimal
-            and config.raise_exception_on_nonoptimal_results
+            and self._config.raise_exception_on_nonoptimal_results
         ):
             raise NoOptimalSolutionError
 
         results.incumbent_objective = self._solver_solver.objective_value
         results.objective_bound = self._solver_solver.best_objective_bound
 
-        if load_solutions:
+        if self._config.load_solutions:
             if self._solver_status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
                 results.solution_loader.load_vars()
             else:
