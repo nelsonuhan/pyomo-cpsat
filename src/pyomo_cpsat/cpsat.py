@@ -328,12 +328,12 @@ class Cpsat(SolverBase):
             cpsat_expr += repn.constant
 
             if c.has_lb():
-                cpsat_lb = int(value(c.lower))
+                cpsat_lb = c.lb
             else:
                 cpsat_lb = cp_model.INT_MIN
 
             if c.has_ub():
-                cpsat_ub = int(value(c.upper))
+                cpsat_ub = c.ub
             else:
                 cpsat_ub = cp_model.INT_MAX
 
