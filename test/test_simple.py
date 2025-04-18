@@ -1,3 +1,4 @@
+import math
 import pyomo.environ as pyo
 from pyomo.contrib.solver.common.base import Availability
 from pyomo.contrib.solver.common.results import SolutionStatus, TerminationCondition
@@ -16,12 +17,6 @@ results = solver.solve(
     rel_gap=0.0,
     abs_gap=1e-4,
     load_solutions=True,
-    # solver_options={
-    #     'num_workers': 1,
-    #     'max_time_in_seconds': 100,
-    #     'absolute_gap_limit': 1e-4,
-    #     'relative_gap_limit': 0.0,
-    # },
 )
 
 
@@ -36,6 +31,26 @@ def test_version():
 
 def test_persistent():
     assert not solver.is_persistent()
+
+
+def test_tee():
+    assert not solver._solver_solver.parameters.log_search_progress
+
+
+def test_threads():
+    assert solver._solver_solver.parameters.num_workers == 1
+
+
+def test_time_limit():
+    assert solver._solver_solver.parameters.max_time_in_seconds == 100
+
+
+def test_rel_gap():
+    assert math.isclose(solver._solver_solver.parameters.relative_gap_limit, 0.0)
+
+
+def test_abs_gap():
+    assert math.isclose(solver._solver_solver.parameters.absolute_gap_limit, 1e-4)
 
 
 def test_solution_status():
