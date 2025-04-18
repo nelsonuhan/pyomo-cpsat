@@ -13,7 +13,7 @@ from pyomo.core.kernel.objective import minimize, maximize
 from pyomo.core.staleflag import StaleFlagManager
 
 from pyomo.common.config import document_kwargs_from_configdict
-from pyomo.common.errors import ApplicationError
+from pyomo.common.errors import ApplicationError, PyomoException
 from pyomo.common.dependencies import attempt_import
 from pyomo.common.tee import TeeStream, capture_output
 
@@ -30,7 +30,6 @@ from pyomo.contrib.solver.common.solution_loader import SolutionLoaderBase
 from pyomo.contrib.solver.common.util import (
     NoFeasibleSolutionError,
     NoOptimalSolutionError,
-    IncompatibleModelError,
     get_objective,
 )
 
@@ -41,6 +40,17 @@ ortools, ortools_available = attempt_import('ortools')
 if ortools_available:
     from ortools.sat.python import cp_model
     from ortools.init.python.init import OrToolsVersion
+
+
+class IncompatibleModelError(PyomoException):
+    def __init__(self, message=None):
+        if message is None:
+            message = (
+                'Model is not compatible with the chosen solver.'
+                'Please check the model and solver.'
+            )
+
+        super().__init__(message)
 
 
 class CpsatSolutionLoader(SolutionLoaderBase):

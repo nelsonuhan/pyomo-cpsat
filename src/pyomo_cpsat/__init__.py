@@ -1,1 +1,1 @@
-from .cpsat import Cpsat
+from .cpsat import Cpsat, IncompatibleModelError
