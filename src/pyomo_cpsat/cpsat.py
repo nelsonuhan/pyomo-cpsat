@@ -425,7 +425,7 @@ class Cpsat(SolverBase):
 
         if (
             results.solution_status != SolutionStatus.optimal
-            and self._config.raise_exception_on_nonoptimal_results
+            and self._config.raise_exception_on_nonoptimal_result
         ):
             raise NoOptimalSolutionError
 
