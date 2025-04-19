@@ -13,14 +13,15 @@ from pyomo.core.kernel.objective import minimize, maximize
 from pyomo.core.staleflag import StaleFlagManager
 
 from pyomo.common.config import document_kwargs_from_configdict
-from pyomo.common.errors import ApplicationError, PyomoException
 from pyomo.common.dependencies import attempt_import
+from pyomo.common.errors import ApplicationError, PyomoException
 from pyomo.common.tee import TeeStream, capture_output
 
 from pyomo.repn import generate_standard_repn
 
 from pyomo.contrib.solver.common.base import SolverBase, Availability
 from pyomo.contrib.solver.common.config import BranchAndBoundConfig
+from pyomo.contrib.solver.common.factory import SolverFactory
 from pyomo.contrib.solver.common.results import (
     Results,
     SolutionStatus,
@@ -80,6 +81,9 @@ class CpsatSolutionLoader(SolutionLoaderBase):
         StaleFlagManager.mark_all_as_stale(delayed=True)
 
 
+@SolverFactory.register(
+    name='cpsat', legacy_name='cpsat', doc='Direct interface to CP-SAT'
+)
 class Cpsat(SolverBase):
     """
     Pyomo solver interface for CP-SAT
