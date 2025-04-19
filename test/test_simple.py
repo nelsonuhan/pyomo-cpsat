@@ -1,13 +1,15 @@
 import math
 import pyomo.environ as pyo
+from pyomo.contrib.solver.common.factory import SolverFactory
 from pyomo.contrib.solver.common.base import Availability
 from pyomo.contrib.solver.common.results import SolutionStatus, TerminationCondition
-from pyomo_cpsat import Cpsat
+import pyomo_cpsat
 from model import SimpleModel
 
 simple = SimpleModel()
 
-solver = Cpsat()
+solver = pyomo_cpsat.Cpsat()
+# solver = SolverFactory('cpsat')
 
 results = solver.solve(
     simple.model,

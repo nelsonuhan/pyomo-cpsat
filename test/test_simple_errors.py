@@ -6,16 +6,16 @@ from pyomo.contrib.solver.common.util import (
     NoOptimalSolutionError,
 )
 from pyomo_cpsat import Cpsat, IncompatibleModelError
-from model import SimpleModel
-
-simple = SimpleModel()
-simple_real_vars = SimpleModel(real_vars=True)
-simple_nolb_vars = SimpleModel(nolb_vars=True)
-simple_noub_vars = SimpleModel(noub_vars=True)
-simple_quad_con = SimpleModel(quad_con=True)
-simple_nonlinear_con = SimpleModel(nonlinear_con=True)
-simple_quad_obj = SimpleModel(quad_obj=True)
-simple_nonlinear_obj = SimpleModel(nonlinear_obj=True)
+from model import (
+    SimpleModel,
+    RealVarsModel,
+    NoLbVarsModel,
+    NoUbVarsModel,
+    QuadConModel,
+    NonlinearConModel,
+    QuadObjModel,
+    NonlinearObjModel,
+)
 
 
 solver = Cpsat()
@@ -24,6 +24,7 @@ solver = Cpsat()
 ## Start tests
 def test_pyomo_equivalent_keys_threads():
     with pytest.raises(ValueError):
+        simple = SimpleModel()
         solver.solve(
             simple.model,
             threads=1,
@@ -35,6 +36,7 @@ def test_pyomo_equivalent_keys_threads():
 
 def test_pyomo_equivalent_keys_time_limit():
     with pytest.raises(ValueError):
+        simple = SimpleModel()
         solver.solve(
             simple.model,
             time_limit=100,
@@ -46,6 +48,7 @@ def test_pyomo_equivalent_keys_time_limit():
 
 def test_pyomo_equivalent_keys_rel_gap():
     with pytest.raises(ValueError):
+        simple = SimpleModel()
         solver.solve(
             simple.model,
             rel_gap=0.0,
@@ -57,6 +60,7 @@ def test_pyomo_equivalent_keys_rel_gap():
 
 def test_pyomo_equivalent_keys_abs_gap():
     with pytest.raises(ValueError):
+        simple = SimpleModel()
         solver.solve(
             simple.model,
             abs_gap=1e-4,
@@ -66,36 +70,43 @@ def test_pyomo_equivalent_keys_abs_gap():
         )
 
 
-def test_real_vars():
+def test_realvars():
     with pytest.raises(ValueError):
-        solver.solve(simple_real_vars.model)
+        realvars = RealVarsModel()
+        solver.solve(realvars.model)
 
 
-def test_nolb_vars():
+def test_nolbvars():
     with pytest.raises(ValueError):
-        solver.solve(simple_nolb_vars.model)
+        nolb = NoLbVarsModel()
+        solver.solve(nolb.model)
 
 
-def test_noub_vars():
+def test_noubvars():
     with pytest.raises(ValueError):
-        solver.solve(simple_noub_vars.model)
+        noub = NoUbVarsModel()
+        solver.solve(noub.model)
 
 
-def test_quad_con():
+def test_quadcon():
     with pytest.raises(IncompatibleModelError):
-        solver.solve(simple_quad_con.model)
+        quadcon = QuadConModel()
+        solver.solve(quadcon.model)
 
 
-def test_nonlinear_con():
+def test_nonlinearcon():
     with pytest.raises(IncompatibleModelError):
-        solver.solve(simple_nonlinear_con.model)
+        nonlinearcon = NonlinearConModel()
+        solver.solve(nonlinearcon.model)
 
 
-def test_quad_obj():
+def test_quadobj():
     with pytest.raises(IncompatibleModelError):
-        solver.solve(simple_quad_obj.model)
+        quadobj = QuadObjModel()
+        solver.solve(quadobj.model)
 
 
-def test_nonlinear_obj():
+def test_nonlinearobj():
     with pytest.raises(IncompatibleModelError):
-        solver.solve(simple_nonlinear_obj.model)
+        nonlinearobj = NonlinearObjModel()
+        solver.solve(nonlinearobj.model)
