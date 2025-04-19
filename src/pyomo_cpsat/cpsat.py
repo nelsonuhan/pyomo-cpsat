@@ -412,6 +412,9 @@ class Cpsat(SolverBase):
         elif self._solver_status == cp_model.FEASIBLE:
             results.solution_status = SolutionStatus.feasible
             results.termination_condition = TerminationCondition.interrupted
+        elif self._solver_status == cp_model.INFEASIBLE:
+            results.solution_status = SolutionStatus.infeasible
+            results.termination_condition = TerminationCondition.provenInfeasible
         elif self._solver_status == cp_model.OPTIMAL:
             results.solution_status = SolutionStatus.optimal
             results.termination_condition = (
