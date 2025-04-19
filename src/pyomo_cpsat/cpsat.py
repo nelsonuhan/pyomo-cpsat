@@ -206,7 +206,7 @@ class Cpsat(SolverBase):
 
             if eq_key is not None:
                 if getattr(self._config, eq_key) is not None:
-                    raise ValueError(
+                    raise KeyError(
                         f'CP-SAT solver option {key} can be specified as Pyomo option {eq_key}.'
                     )
 
@@ -256,7 +256,7 @@ class Cpsat(SolverBase):
         if var.has_lb():
             lb = value(var.lb)
         else:
-            raise ValueError(
+            raise IncompatibleModelError(
                 f'Variable ({var.name}) has no lower bound. '
                 'CP-SAT cannot solve models with variables without lower bounds.'
             )
@@ -264,7 +264,7 @@ class Cpsat(SolverBase):
         if var.has_ub():
             ub = value(var.ub)
         else:
-            raise ValueError(
+            raise IncompatibleModelError(
                 f'Variable ({var.name}) has no upper bound. '
                 'CP-SAT cannot solve models with variables without upper bounds.'
             )
@@ -278,7 +278,7 @@ class Cpsat(SolverBase):
             v_id = id(v)
 
             if v.is_continuous():
-                raise ValueError(
+                raise IncompatibleModelError(
                     'CP-SAT cannot solve models with continuous variables.'
                 )
 

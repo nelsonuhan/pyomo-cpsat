@@ -23,7 +23,7 @@ solver = Cpsat()
 
 ## Start tests
 def test_pyomo_equivalent_keys_threads():
-    with pytest.raises(ValueError):
+    with pytest.raises(KeyError):
         simple = SimpleModel()
         solver.solve(
             simple.model,
@@ -35,7 +35,7 @@ def test_pyomo_equivalent_keys_threads():
 
 
 def test_pyomo_equivalent_keys_time_limit():
-    with pytest.raises(ValueError):
+    with pytest.raises(KeyError):
         simple = SimpleModel()
         solver.solve(
             simple.model,
@@ -47,7 +47,7 @@ def test_pyomo_equivalent_keys_time_limit():
 
 
 def test_pyomo_equivalent_keys_rel_gap():
-    with pytest.raises(ValueError):
+    with pytest.raises(KeyError):
         simple = SimpleModel()
         solver.solve(
             simple.model,
@@ -59,7 +59,7 @@ def test_pyomo_equivalent_keys_rel_gap():
 
 
 def test_pyomo_equivalent_keys_abs_gap():
-    with pytest.raises(ValueError):
+    with pytest.raises(KeyError):
         simple = SimpleModel()
         solver.solve(
             simple.model,
@@ -71,19 +71,19 @@ def test_pyomo_equivalent_keys_abs_gap():
 
 
 def test_realvars():
-    with pytest.raises(ValueError):
+    with pytest.raises(IncompatibleModelError):
         realvars = RealVarsModel()
         solver.solve(realvars.model)
 
 
 def test_nolbvars():
-    with pytest.raises(ValueError):
+    with pytest.raises(IncompatibleModelError):
         nolb = NoLbVarsModel()
         solver.solve(nolb.model)
 
 
 def test_noubvars():
-    with pytest.raises(ValueError):
+    with pytest.raises(IncompatibleModelError):
         noub = NoUbVarsModel()
         solver.solve(noub.model)
 
