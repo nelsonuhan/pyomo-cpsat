@@ -1,4 +1,5 @@
 import math
+from pyomo.contrib.solver.common.results import SolutionStatus, TerminationCondition
 import pytest
 import pyomo.environ as pyo
 from pyomo.contrib.solver.common.util import (
@@ -15,6 +16,7 @@ from model import (
     NonlinearConModel,
     QuadObjModel,
     NonlinearObjModel,
+    InfeasibleModel,
 )
 
 
@@ -110,3 +112,40 @@ def test_nonlinearobj():
     with pytest.raises(IncompatibleModelError):
         nonlinearobj = NonlinearObjModel()
         solver.solve(nonlinearobj.model)
+
+
+def test_infeasible_1():
+    """
+    raise_exception_on_nonoptimal_result = True (default)
+    load_solutions = True (default)
+    """
+    with pytest.raises(NoOptimalSolutionError):
+        infeasible = InfeasibleModel()
+        solver.solve(infeasible.model)
+
+
+def test_infeasible_2():
+    """
+    raise_exception_on_nonoptimal_result = False
+    load_solutions = True (default)
+    """
+    with pytest.raises(NoFeasibleSolutionError):
+        infeasible = InfeasibleModel()
+        solver.solve(infeasible.model, raise_exception_on_nonoptimal_result=False)
+
+
+def test_infeasible_3():
+    """
+    raise_exception_on_nonoptimal_result = False
+    load_solutions = False
+    """
+    infeasible = InfeasibleModel()
+    results = solver.solve(
+        infeasible.model,
+        raise_exception_on_nonoptimal_result=False,
+        load_solutions=False,
+    )
+
+    assert (results.solution_status == SolutionStatus.infeasible) and (
+        results.termination_condition == TerminationCondition.provenInfeasible
+    )

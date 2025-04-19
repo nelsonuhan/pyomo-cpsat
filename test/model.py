@@ -200,3 +200,22 @@ class NonlinearObjModel:
             return pyo.quicksum(pyo.cos(model.x[i]) for i in model.I)
 
         self.model.obj = pyo.Objective(rule=obj_rule, sense=pyo.maximize)
+
+
+class InfeasibleModel:
+    def __init__(self):
+        self.model = pyo.ConcreteModel()
+
+        self.model.I = pyo.Set(initialize=[1, 2, 3])
+        self.model.w = pyo.Param(self.model.I, initialize={1: 10, 2: 10, 3: 10})
+        self.model.x = pyo.Var(self.model.I, domain=pyo.Integers, bounds=(10, 100))
+
+        def con_rule(model):
+            return pyo.quicksum(model.w[i] * model.x[i] for i in model.I) <= 20
+
+        self.model.con = pyo.Constraint(rule=con_rule)
+
+        def obj_rule(model):
+            return pyo.quicksum(model.x[i] for i in model.I)
+
+        self.model.obj = pyo.Objective(rule=obj_rule, sense=pyo.maximize)
