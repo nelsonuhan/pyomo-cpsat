@@ -294,13 +294,9 @@ class Cpsat(SolverBase):
             if not c.active:
                 continue
 
+            # If we set quadratic=False in generate_standard_repn(),
+            # we only need to check for nonlinear expressions
             repn = generate_standard_repn(c.body, quadratic=False)
-
-            if len(repn.quadratic_vars) > 0:
-                raise IncompatibleModelError(
-                    f'Constraint {c.name} contains a quadratic expression. '
-                    'CP-SAT cannot solve models with quadratic constraints.'
-                )
 
             if repn.nonlinear_expr is not None:
                 raise IncompatibleModelError(
@@ -341,13 +337,9 @@ class Cpsat(SolverBase):
         if not obj.active:
             raise ValueError('Cannot add inactive objective to solver.')
 
+        # If we set quadratic=False in generate_standard_repn(),
+        # we only need to check for nonlinear expressions
         repn = generate_standard_repn(obj.expr, quadratic=False)
-
-        if len(repn.quadratic_vars) > 0:
-            raise IncompatibleModelError(
-                f'Objective {obj.name} contains a quadratic expression. '
-                'CP-SAT cannot solve models with a quadratic objective.'
-            )
 
         if repn.nonlinear_expr is not None:
             raise IncompatibleModelError(
