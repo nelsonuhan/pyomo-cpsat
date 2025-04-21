@@ -92,8 +92,6 @@ class Cpsat(SolverBase):
     CONFIG = BranchAndBoundConfig()
 
     def __init__(self, **kwds) -> None:
-        self._treat_fixed_vars_as_params = kwds.pop('treat_fixed_vars_as_params', True)
-
         super().__init__(**kwds)
 
         self._config = None
@@ -290,8 +288,6 @@ class Cpsat(SolverBase):
             self._vars.append(v)
 
     def _add_constraints(self):
-        fixed_vars = []
-
         cons = self._model.component_data_objects(Constraint, descend_into=True)
 
         for c in cons:
@@ -311,12 +307,6 @@ class Cpsat(SolverBase):
                     f'Constraint {c.name} contains a nonlinear expression. '
                     'CP-SAT cannot solve models with nonlinear constraints.'
                 )
-
-            if not self._treat_fixed_vars_as_params:
-                for v in repn.linear_vars:
-                    if is_fixed(v):
-                        v.unfix()
-                        fixed_vars.append(v)
 
             if len(repn.linear_vars) > 0:
                 cpsat_expr = cp_model.LinearExpr.WeightedSum(
@@ -345,9 +335,6 @@ class Cpsat(SolverBase):
                 cpsat_expr, cpsat_lb, cpsat_ub
             ).with_name(c.name)
 
-        for v in fixed_vars:
-            v.fix()
-
     def _set_objective(self):
         obj = get_objective(self._model)
 
@@ -368,13 +355,6 @@ class Cpsat(SolverBase):
                 'CP-SAT cannot solve models with a nonlinear objective.'
             )
 
-        fixed_vars = []
-        if not self._treat_fixed_vars_as_params:
-            for v in repn.linear_vars:
-                if is_fixed(v):
-                    v.unfix()
-                    fixed_vars.append(v)
-
         if len(repn.linear_vars) > 0:
             cpsat_expr = cp_model.LinearExpr.WeightedSum(
                 [self._pyomo_var_to_solver_var_map[id(v)] for v in repn.linear_vars],
@@ -391,9 +371,6 @@ class Cpsat(SolverBase):
             self._solver_model.Maximize(cpsat_expr)
         else:
             raise ValueError(f'Objective sense {obj.sense} is not recognized.')
-
-        for v in fixed_vars:
-            v.fix()
 
     def _load_results(self):
         results = Results()
