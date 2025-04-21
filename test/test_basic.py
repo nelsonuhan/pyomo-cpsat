@@ -1,7 +1,5 @@
-import math
 from pyomo.contrib.solver.common.results import SolutionStatus, TerminationCondition
 import pytest
-import pyomo.environ as pyo
 from pyomo.contrib.solver.common.util import (
     NoFeasibleSolutionError,
     NoOptimalSolutionError,
@@ -9,6 +7,8 @@ from pyomo.contrib.solver.common.util import (
 from pyomo_cpsat import Cpsat, IncompatibleModelError
 from model import (
     SimpleModel,
+    MinObjModel,
+    MaxObjModel,
     RealVarsModel,
     NoLbVarsModel,
     NoUbVarsModel,
@@ -17,6 +17,7 @@ from model import (
     QuadObjModel,
     NonlinearObjModel,
     InfeasibleModel,
+    InactiveConModel,
 )
 
 
@@ -24,6 +25,18 @@ solver = Cpsat()
 
 
 ## Start tests
+def test_max_objective():
+    maxobj = MaxObjModel()
+    solver.solve(maxobj.model)
+    assert solver._solver_model.proto.objective.scaling_factor < 0
+
+
+def test_min_objective():
+    minobj = MinObjModel()
+    solver.solve(minobj.model)
+    assert solver._solver_model.proto.objective.scaling_factor >= 0
+
+
 def test_pyomo_equivalent_keys_threads():
     with pytest.raises(KeyError):
         simple = SimpleModel()
@@ -149,3 +162,13 @@ def test_infeasible_3():
     assert (results.solution_status == SolutionStatus.infeasible) and (
         results.termination_condition == TerminationCondition.provenInfeasible
     )
+
+
+def test_inactive():
+    """
+    Solve a model with 2 constraints, 1 of which is inactive.
+    Pyomo should only pass 1 constraint to CP-SAT.
+    """
+    inactive = InactiveConModel()
+    solver.solve(inactive.model)
+    assert len(solver._solver_model.proto.constraints) == 1

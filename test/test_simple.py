@@ -1,6 +1,5 @@
 import math
 import pyomo.environ as pyo
-from pyomo.contrib.solver.common.factory import SolverFactory
 from pyomo.contrib.solver.common.base import Availability
 from pyomo.contrib.solver.common.results import SolutionStatus, TerminationCondition
 import pyomo_cpsat
@@ -9,11 +8,10 @@ from model import SimpleModel
 simple = SimpleModel()
 
 solver = pyomo_cpsat.Cpsat()
-# solver = SolverFactory('cpsat')
 
 results = solver.solve(
     simple.model,
-    tee=False,
+    tee=True,
     threads=1,
     time_limit=100,
     rel_gap=0.0,
@@ -36,7 +34,7 @@ def test_persistent():
 
 
 def test_tee():
-    assert not solver._solver_solver.parameters.log_search_progress
+    assert solver._solver_solver.parameters.log_search_progress
 
 
 def test_threads():
@@ -76,6 +74,3 @@ def test_solution():
         and simple.model.x['vanilla'].value == 0
         and simple.model.x['matcha'].value == 8
     )
-
-
-# # print('Timing', [(k, v) for k, v in results.timing_info.items()])

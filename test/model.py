@@ -2,6 +2,10 @@ import pyomo.environ as pyo
 
 
 class SimpleModel:
+    """
+    A simple resource allocation model with 3 products and 2 resources.
+    """
+
     def __init__(self):
         cake_types = ['chocolate', 'vanilla', 'matcha']
         ingredients = ['eggs', 'flour']
@@ -56,7 +60,7 @@ class SimpleModel:
         )
 
         def total_cakes_rule(model):
-            return model.total_cakes <= 10
+            return model.total_cakes >= 4
 
         self.model.total_cakes_con = pyo.Constraint(rule=total_cakes_rule)
 
@@ -69,7 +73,57 @@ class SimpleModel:
         self.model.obj = pyo.Objective(rule=obj_rule, sense=pyo.maximize)
 
 
+class MaxObjModel:
+    """
+    A model with a maximization objective.
+    """
+
+    def __init__(self):
+        self.model = pyo.ConcreteModel()
+
+        self.model.I = pyo.Set(initialize=[1, 2, 3])
+        self.model.w = pyo.Param(self.model.I, initialize={1: 10, 2: 20, 3: 30})
+        self.model.x = pyo.Var(self.model.I, domain=pyo.Integers, bounds=(0, 100))
+
+        def con_rule(model):
+            return pyo.quicksum(model.w[i] * model.x[i] for i in model.I) <= 20
+
+        self.model.con = pyo.Constraint(rule=con_rule)
+
+        def obj_rule(model):
+            return pyo.quicksum(model.x[i] for i in model.I)
+
+        self.model.obj = pyo.Objective(rule=obj_rule, sense=pyo.maximize)
+
+
+class MinObjModel:
+    """
+    A model with a minimization objective.
+    """
+
+    def __init__(self):
+        self.model = pyo.ConcreteModel()
+
+        self.model.I = pyo.Set(initialize=[1, 2, 3])
+        self.model.w = pyo.Param(self.model.I, initialize={1: 10, 2: 20, 3: 30})
+        self.model.x = pyo.Var(self.model.I, domain=pyo.Integers, bounds=(0, 100))
+
+        def con_rule(model):
+            return pyo.quicksum(model.w[i] * model.x[i] for i in model.I) <= 20
+
+        self.model.con = pyo.Constraint(rule=con_rule)
+
+        def obj_rule(model):
+            return pyo.quicksum(model.x[i] for i in model.I)
+
+        self.model.obj = pyo.Objective(rule=obj_rule, sense=pyo.minimize)
+
+
 class RealVarsModel:
+    """
+    A model with real variables.
+    """
+
     def __init__(self):
         self.model = pyo.ConcreteModel()
 
@@ -89,6 +143,10 @@ class RealVarsModel:
 
 
 class NoLbVarsModel:
+    """
+    A model with variables unbounded from below.
+    """
+
     def __init__(self):
         self.model = pyo.ConcreteModel()
 
@@ -108,6 +166,10 @@ class NoLbVarsModel:
 
 
 class NoUbVarsModel:
+    """
+    A model with variables unbounded from above.
+    """
+
     def __init__(self):
         self.model = pyo.ConcreteModel()
 
@@ -127,6 +189,10 @@ class NoUbVarsModel:
 
 
 class QuadConModel:
+    """
+    A model with a quadratic constraint.
+    """
+
     def __init__(self):
         self.model = pyo.ConcreteModel()
 
@@ -135,7 +201,7 @@ class QuadConModel:
         self.model.x = pyo.Var(self.model.I, domain=pyo.Integers, bounds=(0, 100))
 
         def con_rule(model):
-            return pyo.quicksum(model.w[i] * model.x[i] ** 2 for i in model.I) <= 20
+            return pyo.quicksum(model.w[i] * model.x[i] ** 3 for i in model.I) <= 20
 
         self.model.con = pyo.Constraint(rule=con_rule)
 
@@ -146,6 +212,10 @@ class QuadConModel:
 
 
 class NonlinearConModel:
+    """
+    A model with a nonlinear (but not quadratic) constraint.
+    """
+
     def __init__(self):
         self.model = pyo.ConcreteModel()
 
@@ -165,6 +235,10 @@ class NonlinearConModel:
 
 
 class QuadObjModel:
+    """
+    A model with a quadratic objective.
+    """
+
     def __init__(self):
         self.model = pyo.ConcreteModel()
 
@@ -184,6 +258,10 @@ class QuadObjModel:
 
 
 class NonlinearObjModel:
+    """
+    A model with a nonlinear (but not quadratic) objective.
+    """
+
     def __init__(self):
         self.model = pyo.ConcreteModel()
 
@@ -203,17 +281,50 @@ class NonlinearObjModel:
 
 
 class InfeasibleModel:
+    """
+    An infeasible model.
+    """
+
     def __init__(self):
         self.model = pyo.ConcreteModel()
 
         self.model.I = pyo.Set(initialize=[1, 2, 3])
-        self.model.w = pyo.Param(self.model.I, initialize={1: 10, 2: 10, 3: 10})
+        self.model.w = pyo.Param(self.model.I, initialize={1: 10, 2: 20, 3: 30})
         self.model.x = pyo.Var(self.model.I, domain=pyo.Integers, bounds=(10, 100))
 
         def con_rule(model):
             return pyo.quicksum(model.w[i] * model.x[i] for i in model.I) <= 20
 
         self.model.con = pyo.Constraint(rule=con_rule)
+
+        def obj_rule(model):
+            return pyo.quicksum(model.x[i] for i in model.I)
+
+        self.model.obj = pyo.Objective(rule=obj_rule, sense=pyo.maximize)
+
+
+class InactiveConModel:
+    """
+    A model with an inactive constraint.
+    """
+
+    def __init__(self):
+        self.model = pyo.ConcreteModel()
+
+        self.model.I = pyo.Set(initialize=[1, 2, 3])
+        self.model.w = pyo.Param(self.model.I, initialize={1: 10, 2: 20, 3: 30})
+        self.model.x = pyo.Var(self.model.I, domain=pyo.Integers, bounds=(0, 100))
+
+        def con_rule(model):
+            return pyo.quicksum(model.w[i] * model.x[i] for i in model.I) <= 20
+
+        self.model.con = pyo.Constraint(rule=con_rule)
+
+        def inactive_con_rule(model):
+            return pyo.quicksum(model.w[i] * model.x[i] for i in model.I) >= 100
+
+        self.model.inactive_con = pyo.Constraint(rule=inactive_con_rule)
+        self.model.inactive_con.deactivate()
 
         def obj_rule(model):
             return pyo.quicksum(model.x[i] for i in model.I)
