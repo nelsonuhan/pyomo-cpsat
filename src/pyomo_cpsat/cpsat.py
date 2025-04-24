@@ -305,7 +305,7 @@ class Cpsat(SolverBase):
                 )
 
             if len(repn.linear_vars) > 0:
-                cpsat_expr = cp_model.LinearExpr.WeightedSum(
+                cpsat_expr = cp_model.LinearExpr.weighted_sum(
                     [
                         self._pyomo_var_to_solver_var_map[id(v)]
                         for v in repn.linear_vars
@@ -348,7 +348,7 @@ class Cpsat(SolverBase):
             )
 
         if len(repn.linear_vars) > 0:
-            cpsat_expr = cp_model.LinearExpr.WeightedSum(
+            cpsat_expr = cp_model.LinearExpr.weighted_sum(
                 [self._pyomo_var_to_solver_var_map[id(v)] for v in repn.linear_vars],
                 repn.linear_coefs,
             )
@@ -358,9 +358,9 @@ class Cpsat(SolverBase):
         cpsat_expr += repn.constant
 
         if obj.sense == minimize:
-            self._solver_model.Minimize(cpsat_expr)
+            self._solver_model.minimize(cpsat_expr)
         elif obj.sense == maximize:
-            self._solver_model.Maximize(cpsat_expr)
+            self._solver_model.maximize(cpsat_expr)
         else:
             raise ValueError(f'Objective sense {obj.sense} is not recognized.')
 
