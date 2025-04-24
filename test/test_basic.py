@@ -1,5 +1,6 @@
-from pyomo.contrib.solver.common.results import SolutionStatus, TerminationCondition
 import pytest
+import pyomo.environ as pyo
+from pyomo.contrib.solver.common.results import SolutionStatus, TerminationCondition
 from pyomo.contrib.solver.common.util import (
     NoFeasibleSolutionError,
     NoOptimalSolutionError,
@@ -18,6 +19,7 @@ from model import (
     NonlinearObjModel,
     InfeasibleModel,
     InactiveConModel,
+    ConstantObjModel,
 )
 
 
@@ -35,6 +37,21 @@ def test_min_objective():
     minobj = MinObjModel()
     solver.solve(minobj.model)
     assert solver._solver_model.proto.objective.scaling_factor >= 0
+
+
+def test_solver_options():
+    simple = SimpleModel()
+    solver.solve(simple.model, solver_options={'num_full_subsolvers': 2})
+    assert solver._solver_solver.parameters.num_full_subsolvers == 2
+
+
+def test_solver_options_repeating():
+    simple = SimpleModel()
+    solver.solve(
+        simple.model,
+        solver_options={'subsolvers': ['pseudo_costs', 'probing']},
+    )
+    assert solver._solver_solver.parameters.subsolvers == ['pseudo_costs', 'probing']
 
 
 def test_pyomo_equivalent_keys_threads():
@@ -172,3 +189,16 @@ def test_inactive():
     inactive = InactiveConModel()
     solver.solve(inactive.model)
     assert len(solver._solver_model.proto.constraints) == 1
+
+
+def test_constantobj():
+    constantobj = ConstantObjModel()
+    solver.solve(constantobj.model)
+    assert pyo.value(constantobj.model.obj) == 500
+
+
+def test_inactive_obj():
+    with pytest.raises(ValueError):
+        simple = SimpleModel()
+        simple.model.obj.deactivate()
+        solver.solve(simple.model)

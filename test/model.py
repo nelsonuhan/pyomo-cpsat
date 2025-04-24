@@ -330,3 +330,26 @@ class InactiveConModel:
             return pyo.quicksum(model.x[i] for i in model.I)
 
         self.model.obj = pyo.Objective(rule=obj_rule, sense=pyo.maximize)
+
+
+class ConstantObjModel:
+    """
+    A model with a constant objective.
+    """
+
+    def __init__(self):
+        self.model = pyo.ConcreteModel()
+
+        self.model.I = pyo.Set(initialize=[1, 2, 3])
+        self.model.w = pyo.Param(self.model.I, initialize={1: 10, 2: 20, 3: 30})
+        self.model.x = pyo.Var(self.model.I, domain=pyo.Integers, bounds=(0, 100))
+
+        def con_rule(model):
+            return pyo.quicksum(model.w[i] * model.x[i] for i in model.I) <= 10
+
+        self.model.con = pyo.Constraint(rule=con_rule)
+
+        def obj_rule(model):
+            return 500 + 0 * model.x[1]
+
+        self.model.obj = pyo.Objective(rule=obj_rule, sense=pyo.maximize)
