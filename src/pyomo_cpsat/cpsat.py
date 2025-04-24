@@ -334,8 +334,8 @@ class Cpsat(SolverBase):
     def _set_objective(self):
         obj = get_objective(self._model)
 
-        if not obj.active:
-            raise ValueError('Cannot add inactive objective to solver.')
+        if obj is None:
+            raise ValueError('No active objectives to add to solver.')
 
         # If we set quadratic=False in generate_standard_repn(),
         # we only need to check for nonlinear expressions
