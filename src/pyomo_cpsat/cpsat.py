@@ -8,7 +8,7 @@ from pyomo.common.timing import HierarchicalTimer
 from pyomo.core.base.constraint import Constraint
 from pyomo.core.base.var import Var, VarData
 from pyomo.core.base.block import BlockData
-from pyomo.core.expr.numvalue import value, is_fixed
+from pyomo.core.expr.numvalue import value
 from pyomo.core.kernel.objective import minimize, maximize
 from pyomo.core.staleflag import StaleFlagManager
 
