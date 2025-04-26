@@ -12,7 +12,7 @@ from pyomo.core.expr.numvalue import value
 from pyomo.core.kernel.objective import minimize, maximize
 from pyomo.core.staleflag import StaleFlagManager
 
-from pyomo.common.config import document_kwargs_from_configdict
+from pyomo.common.config import document_kwargs_from_configdict, ConfigValue, Bool
 from pyomo.common.dependencies import attempt_import
 from pyomo.common.errors import ApplicationError, PyomoException
 from pyomo.common.tee import TeeStream, capture_output
@@ -54,6 +54,38 @@ class IncompatibleModelError(PyomoException):
         super().__init__(message)
 
 
+class CpsatConfig(BranchAndBoundConfig):
+    """ """
+
+    def __init__(
+        self,
+        description=None,
+        doc=None,
+        implicit=False,
+        implicit_domain=None,
+        visibility=0,
+    ):
+        super().__init__(
+            description=description,
+            doc=doc,
+            implicit=implicit,
+            implicit_domain=implicit_domain,
+            visibility=visibility,
+        )
+
+        self.find_infeasible_subsystem: bool = self.declare(
+            'find_infeasible_subsystem',
+            ConfigValue(
+                domain=Bool,
+                default=False,
+                description='If True, finds a (potentially smaller) subsystem '
+                'of infeasible constraints, assuming the model is infeasible. '
+                'When True, the values of the keyword arguments '
+                'raise_exception_on_nonoptimal_result and load_solutions are ignored.',
+            ),
+        )
+
+
 class CpsatSolutionLoader(SolutionLoaderBase):
     """
     Pyomo solution loader for CP-SAT
@@ -86,10 +118,10 @@ class CpsatSolutionLoader(SolutionLoaderBase):
 )
 class Cpsat(SolverBase):
     """
-    Pyomo solver interface for CP-SAT
+    Pyomo direct solver interface for CP-SAT
     """
 
-    CONFIG = BranchAndBoundConfig()
+    CONFIG = CpsatConfig()
 
     def __init__(self, **kwds) -> None:
         super().__init__(**kwds)
@@ -161,21 +193,11 @@ class Cpsat(SolverBase):
         StaleFlagManager.mark_all_as_stale()
 
         self._model = model
+
         self._solver_model = cp_model.CpModel()
         self._solver_solver = cp_model.CpSolver()
 
-        timer.start('add_variables')
-        self._add_variables()
-        timer.stop('add_variables')
-
-        timer.start('add_constraints')
-        self._add_constraints()
-        timer.stop('add_constraints')
-
-        timer.start('set_objective')
-        self._set_objective()
-        timer.stop('set_objective')
-
+        # CP-SAT options: google/or-tools/ortools/sat/sat_parameters.proto
         if self._config.tee:
             self._solver_solver.parameters.log_search_progress = True
 
@@ -191,7 +213,6 @@ class Cpsat(SolverBase):
         if self._config.abs_gap is not None:
             self._solver_solver.parameters.absolute_gap_limit = self._config.abs_gap
 
-        # CP-SAT options: google/or-tools/ortools/sat/sat_parameters.proto
         for key, opt in self._config.solver_options.items():
             pyomo_equivalent_keys = {
                 'num_workers': 'threads',
@@ -227,6 +248,18 @@ class Cpsat(SolverBase):
                 except TypeError:
                     raise
 
+        timer.start('add_variables')
+        self._add_variables()
+        timer.stop('add_variables')
+
+        timer.start('add_constraints')
+        self._add_constraints()
+        timer.stop('add_constraints')
+
+        timer.start('set_objective')
+        self._set_objective()
+        timer.stop('set_objective')
+
         ostreams = [io.StringIO()] + self._config.tee
         with capture_output(output=TeeStream(*ostreams), capture_fd=True):
             timer.start('optimize')
@@ -236,6 +269,9 @@ class Cpsat(SolverBase):
         timer.start('load_results')
         results = self._load_results()
         timer.stop('load_results')
+
+        if self._config.find_infeasible_subsystem:
+            self._output_infeasible_subsystem()
 
         end_timestamp = datetime.datetime.now(datetime.timezone.utc)
         results.timing_info.start_timestamp = start_timestamp
@@ -288,6 +324,8 @@ class Cpsat(SolverBase):
             self._vars.append(v)
 
     def _add_constraints(self):
+        enforcement_literals = []
+
         cons = self._model.component_data_objects(Constraint, descend_into=True)
 
         for c in cons:
@@ -327,11 +365,22 @@ class Cpsat(SolverBase):
             else:
                 cpsat_ub = cp_model.INT_MAX
 
-            self._solver_model.add_linear_constraint(
+            cpsat_con = self._solver_model.add_linear_constraint(
                 cpsat_expr, cpsat_lb, cpsat_ub
             ).with_name(c.name)
 
+            if self._config.find_infeasible_subsystem:
+                v = self._solver_model.new_bool_var(f'{c.name}')
+                cpsat_con.only_enforce_if(v)
+                enforcement_literals.append(v)
+
+        if self._config.find_infeasible_subsystem:
+            self._solver_model.add_assumptions(enforcement_literals)
+
     def _set_objective(self):
+        if self._config.find_infeasible_subsystem:
+            return
+
         obj = get_objective(self._model)
 
         if obj is None:
@@ -395,19 +444,27 @@ class Cpsat(SolverBase):
         else:
             raise ValueError('CP-SAT terminated with invalid solver status.')
 
-        if (
-            results.solution_status != SolutionStatus.optimal
-            and self._config.raise_exception_on_nonoptimal_result
-        ):
-            raise NoOptimalSolutionError
+        if not self._config.find_infeasible_subsystem:
+            if (
+                results.solution_status != SolutionStatus.optimal
+                and self._config.raise_exception_on_nonoptimal_result
+            ):
+                raise NoOptimalSolutionError
+
+            if self._config.load_solutions:
+                if self._solver_status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+                    results.solution_loader.load_vars()
+                else:
+                    raise NoFeasibleSolutionError
 
         results.incumbent_objective = self._solver_solver.objective_value
         results.objective_bound = self._solver_solver.best_objective_bound
 
-        if self._config.load_solutions:
-            if self._solver_status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-                results.solution_loader.load_vars()
-            else:
-                raise NoFeasibleSolutionError
-
         return results
+
+    def _output_infeasible_subsystem(self):
+        print('Infeasible subsystem of constraints')
+        print('-----------------------------------')
+        for i in self._solver_solver.sufficient_assumptions_for_infeasibility():
+            print(self._solver_model.get_bool_var_from_proto_index(i).name)
+        print('')
