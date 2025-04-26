@@ -181,6 +181,13 @@ def test_infeasible_3():
     )
 
 
+def test_find_infeasible_subsystem(capfd):
+    infeasible = InfeasibleModel()
+    solver.solve(infeasible.model, find_infeasible_subsystem=True)
+    captured = capfd.readouterr()
+    assert '\ninfeasible_con\n' in captured.out
+
+
 def test_inactive():
     """
     Solve a model with 2 constraints, 1 of which is inactive.

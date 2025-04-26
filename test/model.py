@@ -292,10 +292,10 @@ class InfeasibleModel:
         self.model.w = pyo.Param(self.model.I, initialize={1: 10, 2: 20, 3: 30})
         self.model.x = pyo.Var(self.model.I, domain=pyo.Integers, bounds=(10, 100))
 
-        def con_rule(model):
+        def infeasible_con_rule(model):
             return pyo.quicksum(model.w[i] * model.x[i] for i in model.I) <= 20
 
-        self.model.con = pyo.Constraint(rule=con_rule)
+        self.model.infeasible_con = pyo.Constraint(rule=infeasible_con_rule)
 
         def obj_rule(model):
             return pyo.quicksum(model.x[i] for i in model.I)
