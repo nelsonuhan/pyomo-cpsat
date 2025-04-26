@@ -366,6 +366,9 @@ class Cpsat(SolverBase):
 
     def _load_results(self):
         results = Results()
+        results.solver_name = 'CP-SAT'
+        results.solver_version = self.version()
+        results.solver_config = self._config
         results.solution_loader = CpsatSolutionLoader(
             self._solver_solver, self._vars, self._pyomo_var_to_solver_var_map
         )
