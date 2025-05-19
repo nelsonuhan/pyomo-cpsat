@@ -1,13 +1,16 @@
 [build-system]
-requires = ["flit-core >= 3.4"]
+requires = ["flit-core >= 3.2,<4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "pyomo_cpsat"
-version = "2025.1"
+name = "pyomo-cpsat"
+version = "2025.05"
 authors = [
   { name = "Nelson Uhan", email = "nelson@uhan.me" }
 ]
 description = "Pyomo interface to CP-SAT"
 readme = "README.md"
-dependencies = ["pyomo == 6.9.2"]
+dependencies = ["pyomo >= 6.9.2"]
+
+[project.urls]
+Home = "https://github.com/nelsonuhan/pyomo-cpsat"
