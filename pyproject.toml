@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "pyomo-cpsat"
-version = "2025.5.1"
+version = "2026.1.8"
 authors = [
   { name = "Nelson Uhan", email = "nelson@uhan.me" }
 ]
