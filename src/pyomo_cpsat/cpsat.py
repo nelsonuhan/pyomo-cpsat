@@ -353,7 +353,15 @@ class Cpsat(SolverBase):
             else:
                 cpsat_expr = 0
 
-            cpsat_expr += repn.constant
+            if not repn.constant.is_integer():
+                raise IncompatibleModelError(
+                    f'Constraint {c.name} contains a fractional constant. '
+                    'CP-SAT cannot solve models with fractional coefficients.'
+                )
+            else:
+                # Pyomo sometimes generates a StandardRepn
+                # with an integer constant as a float
+                cpsat_expr += int(repn.constant)
 
             if c.has_lb():
                 cpsat_lb = c.lb
