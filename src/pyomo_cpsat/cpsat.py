@@ -27,7 +27,7 @@ from pyomo.contrib.solver.common.results import (
     SolutionStatus,
     TerminationCondition,
 )
-from pyomo.contrib.solver.common.solution_loader import SolutionLoaderBase
+from pyomo.contrib.solver.common.solution_loader import SolutionLoader
 from pyomo.contrib.solver.common.util import (
     NoFeasibleSolutionError,
     NoOptimalSolutionError,
@@ -86,7 +86,7 @@ class CpsatConfig(BranchAndBoundConfig):
         )
 
 
-class CpsatSolutionLoader(SolutionLoaderBase):
+class CpsatSolutionLoader(SolutionLoader):
     """
     Pyomo solution loader for CP-SAT
     """
