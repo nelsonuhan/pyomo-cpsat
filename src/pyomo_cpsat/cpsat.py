@@ -1,25 +1,15 @@
-import io
 import datetime
+import io
 import logging
+from collections.abc import Mapping, Sequence
+from typing import NoReturn
 
-from typing import Sequence, Optional, Mapping, Tuple, NoReturn
-
-from pyomo.common.timing import HierarchicalTimer
-from pyomo.core.base.constraint import Constraint
-from pyomo.core.base.var import Var, VarData
-from pyomo.core.base.block import BlockData
-from pyomo.core.expr.numvalue import value
-from pyomo.core.kernel.objective import minimize, maximize
-from pyomo.core.staleflag import StaleFlagManager
-
-from pyomo.common.config import document_kwargs_from_configdict, ConfigValue, Bool
+from pyomo.common.config import Bool, ConfigValue, document_kwargs_from_configdict
 from pyomo.common.dependencies import attempt_import
 from pyomo.common.errors import ApplicationError, PyomoException
 from pyomo.common.tee import TeeStream, capture_output
-
-from pyomo.repn import generate_standard_repn
-
-from pyomo.contrib.solver.common.base import SolverBase, Availability
+from pyomo.common.timing import HierarchicalTimer
+from pyomo.contrib.solver.common.base import Availability, SolverBase
 from pyomo.contrib.solver.common.config import BranchAndBoundConfig
 from pyomo.contrib.solver.common.factory import SolverFactory
 from pyomo.contrib.solver.common.results import (
@@ -33,14 +23,21 @@ from pyomo.contrib.solver.common.util import (
     NoOptimalSolutionError,
     get_objective,
 )
+from pyomo.core.base.block import BlockData
+from pyomo.core.base.constraint import Constraint
+from pyomo.core.base.var import Var, VarData
+from pyomo.core.expr.numvalue import value
+from pyomo.core.kernel.objective import maximize, minimize
+from pyomo.core.staleflag import StaleFlagManager
+from pyomo.repn import generate_standard_repn
 
 logger = logging.getLogger(__name__)
 
 ortools, ortools_available = attempt_import('ortools')
 
 if ortools_available:
-    from ortools.sat.python import cp_model
     from ortools.init.python.init import OrToolsVersion
+    from ortools.sat.python import cp_model
 
 
 class IncompatibleModelError(PyomoException):
@@ -103,7 +100,7 @@ class CpsatSolutionLoader(SolutionLoader):
         self._pyomo_vars = pyomo_vars
         self._pyomo_cpsat_map = pyomo_cpsat_map
 
-    def load_vars(self, vars_to_load: Optional[Sequence[VarData]] = None) -> NoReturn:
+    def load_vars(self, vars_to_load: Sequence[VarData] | None = None) -> NoReturn:
         if vars_to_load is None:
             vars_to_load = self._pyomo_vars
 
@@ -144,7 +141,7 @@ class Cpsat(SolverBase):
         else:
             return Availability.NotFound
 
-    def version(self) -> Tuple:
+    def version(self) -> tuple:
         return (
             OrToolsVersion.major_number(),
             OrToolsVersion.minor_number(),
@@ -480,4 +477,4 @@ class Cpsat(SolverBase):
         print('-----------------------------------')
         for i in self._solver_solver.sufficient_assumptions_for_infeasibility():
             print(self._solver_model.get_bool_var_from_proto_index(i).name)
-        print('')
+        print()
