@@ -91,7 +91,7 @@ class CpsatSolutionLoader(SolutionLoader):
         cpsat_solver: cp_model.CpSolver,
         pyomo_model: BlockData,
         pyomo_vars: Sequence[VarData],
-        pyomo_cpsat_map=Mapping[int, cp_model.IntVar],
+        pyomo_cpsat_map: Mapping[int, cp_model.IntVar],
     ):
         self._cpsat_solver = cpsat_solver
         self._pyomo_model = pyomo_model
