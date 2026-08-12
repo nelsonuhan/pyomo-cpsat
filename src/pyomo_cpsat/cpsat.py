@@ -294,6 +294,9 @@ class Cpsat(SolverBase):
         return lb, ub
 
     def _add_variables(self):
+        assert self._model is not None
+        assert self._solver_model is not None
+
         vars = self._model.component_data_objects(Var, descend_into=True)
 
         for v in vars:
@@ -312,6 +315,10 @@ class Cpsat(SolverBase):
             self._vars.append(v)
 
     def _add_constraints(self):
+        assert self._model is not None
+        assert self._solver_model is not None
+        assert self._config is not None
+
         enforcement_literals = []
 
         cons = self._model.component_data_objects(Constraint, descend_into=True)
@@ -374,6 +381,10 @@ class Cpsat(SolverBase):
             self._solver_model.add_assumptions(enforcement_literals)
 
     def _set_objective(self):
+        assert self._model is not None
+        assert self._solver_model is not None
+        assert self._config is not None
+
         if self._config.find_infeasible_subsystem:
             return
 
@@ -410,6 +421,10 @@ class Cpsat(SolverBase):
             raise ValueError(f'Objective sense {obj.sense} is not recognized.')
 
     def _load_results(self):
+        assert self._model is not None
+        assert self._config is not None
+        assert self._solver_solver is not None
+
         results = Results()
         results.solver_name = 'CP-SAT'
         results.solver_version = self.version()
@@ -462,6 +477,9 @@ class Cpsat(SolverBase):
         return results
 
     def _output_infeasible_subsystem(self):
+        assert self._solver_solver is not None
+        assert self._solver_model is not None
+
         print('Infeasible subsystem of constraints')
         print('-----------------------------------')
         for i in self._solver_solver.sufficient_assumptions_for_infeasibility():
