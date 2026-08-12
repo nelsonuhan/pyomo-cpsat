@@ -2,7 +2,6 @@ import datetime
 import io
 import logging
 from collections.abc import Mapping, Sequence
-from typing import NoReturn
 
 from pyomo.common.config import Bool, ConfigValue, document_kwargs_from_configdict
 from pyomo.common.dependencies import attempt_import
@@ -98,7 +97,7 @@ class CpsatSolutionLoader(SolutionLoader):
         self._pyomo_vars = pyomo_vars
         self._pyomo_cpsat_map = pyomo_cpsat_map
 
-    def load_vars(self, vars_to_load: Sequence[VarData] | None = None) -> NoReturn:
+    def load_vars(self, vars_to_load: Sequence[VarData] | None = None) -> None:
         if vars_to_load is None:
             vars_to_load = self._pyomo_vars
 
