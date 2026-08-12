@@ -98,18 +98,18 @@ class CpsatSolutionLoader(SolutionLoader):
         pyomo_vars: Sequence[VarData],
         pyomo_cpsat_map=Mapping[int, cp_model.IntVar],
     ):
-        self.cpsat_solver = cpsat_solver
+        self._cpsat_solver = cpsat_solver
         self._pyomo_model = pyomo_model
-        self.pyomo_vars = pyomo_vars
-        self.pyomo_cpsat_map = pyomo_cpsat_map
+        self._pyomo_vars = pyomo_vars
+        self._pyomo_cpsat_map = pyomo_cpsat_map
 
     def load_vars(self, vars_to_load: Optional[Sequence[VarData]] = None) -> NoReturn:
         if vars_to_load is None:
-            vars_to_load = self.pyomo_vars
+            vars_to_load = self._pyomo_vars
 
         for v in vars_to_load:
-            cpsat_var = self.pyomo_cpsat_map[id(v)]
-            cpsat_val = self.cpsat_solver.value(cpsat_var)
+            cpsat_var = self._pyomo_cpsat_map[id(v)]
+            cpsat_val = self._cpsat_solver.value(cpsat_var)
             v.set_value(cpsat_val, skip_validation=True)
 
         StaleFlagManager.mark_all_as_stale(delayed=True)
