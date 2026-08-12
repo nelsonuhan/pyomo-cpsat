@@ -236,16 +236,9 @@ class Cpsat(SolverBase):
             ]
 
             if key in repeating_keys:
-                try:
-                    getattr(self._solver_solver.parameters, key).extend(opt)
-                except TypeError:
-                    raise
-
+                getattr(self._solver_solver.parameters, key).extend(opt)
             else:
-                try:
-                    setattr(self._solver_solver.parameters, key, opt)
-                except TypeError:
-                    raise
+                setattr(self._solver_solver.parameters, key, opt)
 
         timer.start('add_variables')
         self._add_variables()
