@@ -52,8 +52,6 @@ class IncompatibleModelError(PyomoException):
 
 
 class CpsatConfig(BranchAndBoundConfig):
-    """ """
-
     def __init__(
         self,
         description=None,
@@ -222,11 +220,10 @@ class Cpsat(SolverBase):
 
             eq_key = pyomo_equivalent_keys.get(key, None)
 
-            if eq_key is not None:
-                if getattr(self._config, eq_key) is not None:
-                    raise KeyError(
-                        f'CP-SAT solver option {key} can be specified as Pyomo option {eq_key}.'
-                    )
+            if (eq_key is not None) and (getattr(self._config, eq_key) is not None):
+                raise KeyError(
+                    f'CP-SAT solver option {key} can be specified as Pyomo option {eq_key}.'
+                )
 
             repeating_keys = [
                 'RestartAlgorithm',
