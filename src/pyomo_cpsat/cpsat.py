@@ -94,10 +94,12 @@ class CpsatSolutionLoader(SolutionLoader):
     def __init__(
         self,
         cpsat_solver: cp_model.CpSolver,
+        pyomo_model: BlockData,
         pyomo_vars: Sequence[VarData],
         pyomo_cpsat_map=Mapping[int, cp_model.IntVar],
     ):
         self.cpsat_solver = cpsat_solver
+        self._pyomo_model = pyomo_model
         self.pyomo_vars = pyomo_vars
         self.pyomo_cpsat_map = pyomo_cpsat_map
 
@@ -427,7 +429,10 @@ class Cpsat(SolverBase):
         results.solver_version = self.version()
         results.solver_config = self._config
         results.solution_loader = CpsatSolutionLoader(
-            self._solver_solver, self._vars, self._pyomo_var_to_solver_var_map
+            self._solver_solver,
+            self._model,
+            self._vars,
+            self._pyomo_var_to_solver_var_map,
         )
         results.timing_info.cpsat_time = self._solver_solver.wall_time
 
